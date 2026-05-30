@@ -1,0 +1,28 @@
+# Rust
+target/
+ Cargo.lock
+**/*.rs.bk
+*.pdb
+*.dll
+*.so
+*.dylib
+*.rlib
+
+# Environment
+.env
+.env.*
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.tmp
+*.temp
