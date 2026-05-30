@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RangeMode {
@@ -52,7 +51,7 @@ pub struct ChainConfig {
     pub weth: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GasModel {
     pub bribe_pct: f64,
     pub priority_fee: u64,
@@ -69,7 +68,7 @@ impl Default for GasModel {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutputConfig {
     pub csv: bool,
     pub json: bool,

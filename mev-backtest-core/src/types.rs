@@ -1,0 +1,1 @@
+// Placeholder for types module - to be expanded in later phases

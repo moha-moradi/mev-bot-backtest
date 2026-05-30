@@ -1,5 +1,6 @@
 use crate::config::*;
 use clap::{Args, Parser, Subcommand};
+use url::Url;
 
 #[derive(Debug, Parser)]
 #[command(name = "mev-backtest")]
@@ -27,11 +28,11 @@ pub struct Cli {
     pub output_args: OutputArgs,
 
     /// Config file path
-    #[arg(short, long, env = "MEV_CONFIG")]
+    #[arg(short = 'f', long, env = "MEV_CONFIG")]
     pub config: Option<std::path::PathBuf>,
 
     /// Cache directory for block data
-    #[arg(short, long, default_value = "./cache")]
+    #[arg(short = 'd', long, default_value = "./cache")]
     pub cache_dir: std::path::PathBuf,
 
     /// Verbose output
@@ -44,14 +45,13 @@ pub struct Cli {
 }
 
 #[derive(Debug, Args)]
-#[group(required = false, multiple = false)]
 pub struct BlockRangeArgs {
     /// Number of days to backtest (from current tip)
-    #[arg(long, value_name = "DAYS", conflicts_with_all = ["blocks", "single_block", "from_block", "to_block"])]
+    #[arg(long, value_name = "DAYS", conflicts_with_all = ["blocks", "block", "from_block", "to_block"])]
     pub days: Option<u64>,
 
     /// Number of blocks to backtest (from current tip)
-    #[arg(long, value_name = "BLOCKS", conflicts_with_all = ["days", "single_block", "from_block", "to_block"])]
+    #[arg(long, value_name = "BLOCKS", conflicts_with_all = ["days", "block", "from_block", "to_block"])]
     pub blocks: Option<u64>,
 
     /// Single block number to analyze
@@ -59,22 +59,22 @@ pub struct BlockRangeArgs {
     pub block: Option<u64>,
 
     /// Starting block number
-    #[arg(long, value_name = "NUMBER", requires = "to_block")]
+    #[arg(long, value_name = "NUMBER")]
     pub from_block: Option<u64>,
 
     /// Ending block number
-    #[arg(long, value_name = "NUMBER", requires = "from_block")]
+    #[arg(long, value_name = "NUMBER")]
     pub to_block: Option<u64>,
 }
 
 #[derive(Debug, Args)]
 pub struct ChainArgs {
     /// Chain to backtest (ethereum, polygon, arbitrum, optimism)
-    #[arg(short, long, default_value = "ethereum")]
+    #[arg(short = 'n', long, default_value = "ethereum")]
     pub chain: String,
 
     /// RPC URL (overrides config file)
-    #[arg(short, long, env = "MEV_RPC_URL")]
+    #[arg(short = 'r', long, env = "MEV_RPC_URL")]
     pub rpc_url: Option<String>,
 }
 
@@ -153,7 +153,7 @@ impl Cli {
         resolved.chain = self.chain_args.chain.parse()?;
 
         // Override RPC URL
-        if let Some(ref url) = self.rpc_url {
+        if let Some(ref url) = self.chain_args.rpc_url {
             resolved.rpc_url = Some(url.clone());
         }
 
@@ -193,6 +193,8 @@ impl Cli {
                     from_block: *from,
                     to_block: *to,
                 })),
+                (Some(_), None) => anyhow::bail!("--to-block is required when --from-block is specified"),
+                (None, Some(_)) => anyhow::bail!("--from-block is required when --to-block is specified"),
                 _ => Ok(None),
             },
             _ => anyhow::bail!("Only one block range mode can be specified at a time"),
@@ -200,7 +202,7 @@ impl Cli {
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
-        let range_mode = self.resolve_range_mode()?;
+        let _range_mode = self.resolve_range_mode()?;
         
         // Validate strategies
         for strategy in &self.strategy_args.strategies {
@@ -219,7 +221,7 @@ impl Cli {
         }
 
         // Validate RPC URL format if provided
-        if let Some(ref url) = self.rpc_url {
+        if let Some(ref url) = self.chain_args.rpc_url {
             Url::parse(url)?;
         }
 
