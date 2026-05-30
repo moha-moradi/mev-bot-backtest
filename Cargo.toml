@@ -1,0 +1,3 @@
+[workspace]
+resolver = "2"
+members = ["mev-backtest-core", "mev-backtest-cli"]
