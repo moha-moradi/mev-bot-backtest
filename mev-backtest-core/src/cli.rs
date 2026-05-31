@@ -146,4 +146,11 @@ pub struct ReplayArgs {
     /// Replay up to this tx index (default: all)
     #[arg(long, value_name = "INDEX")]
     pub tx_index: Option<usize>,
+
+    #[command(flatten)]
+    pub chain_args: ChainArgs,
+
+    /// Block/state cache directory
+    #[arg(long, default_value = "./cache", value_name = "PATH")]
+    pub cache_dir: String,
 }

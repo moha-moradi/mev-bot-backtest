@@ -21,6 +21,17 @@ impl ChainName {
         }
     }
 
+    /// Public (free-tier) RPC endpoint — no API key required.
+    pub fn public_rpc_url(&self) -> &'static str {
+        match self {
+            ChainName::Polygon => "https://polygon-bor.publicnode.com",
+            ChainName::Avalanche => "https://avalanche-c-chain.publicnode.com",
+            ChainName::Bsc => "https://bsc.publicnode.com",
+            ChainName::Arbitrum => "https://arbitrum-one.publicnode.com",
+            ChainName::Base => "https://base.publicnode.com",
+        }
+    }
+
     pub fn all() -> &'static [ChainName] {
         &[
             ChainName::Polygon,

@@ -17,6 +17,7 @@ pub struct RunManifest {
     pub flash_loan_provider: String,
 }
 
+#[derive(Clone)]
 pub struct CacheStore {
     db: sled::Db,
     chain_id: u64,

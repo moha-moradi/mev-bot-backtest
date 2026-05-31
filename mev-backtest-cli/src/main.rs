@@ -9,6 +9,7 @@ use mev_backtest_core::cache::{CacheStore, RunManifest};
 use mev_backtest_core::cli::{Cli, Command};
 use mev_backtest_core::config::CliOverrides;
 use mev_backtest_core::fetch::Fetcher;
+use mev_backtest_core::replay::BlockReplayer;
 use mev_backtest_core::resolver::RangeResolver;
 use mev_backtest_core::rpc::RpcClient;
 use mev_backtest_core::validation;
@@ -69,7 +70,26 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             cache_dir: None,
             parallelism: args.parallelism,
         },
-        Command::Report | Command::Config | Command::Replay(_) => CliOverrides {
+        Command::Replay(args) => CliOverrides {
+            days: None,
+            blocks: None,
+            block: Some(args.block),
+            from_block: None,
+            to_block: None,
+            chain: Some(args.chain_args.chain.clone()),
+            rpc_url: args.chain_args.rpc_url.clone(),
+            flash_loan_provider: None,
+            strategies: None,
+            gas_model: None,
+            priority_fee: None,
+            coinbase_bribe: None,
+            min_profit_usd: None,
+            output: None,
+            export_path: None,
+            cache_dir: Some(args.cache_dir.clone()),
+            parallelism: None,
+        },
+        Command::Report | Command::Config => CliOverrides {
             days: None,
             blocks: None,
             block: None,
@@ -157,10 +177,8 @@ async fn main() -> anyhow::Result<()> {
             };
 
             // Build RPC client
-            let rpc_url = config.rpc_url.as_deref().ok_or_else(|| {
-                anyhow::anyhow!("RPC URL is required. Use --rpc <URL> or set rpc_url in config.")
-            })?;
-            let rpc = RpcClient::new(rpc_url, validation_result.chain_config.chain_id)?;
+            let rpc_url = config.effective_rpc_url(validation_result.chain_name);
+            let rpc = RpcClient::new(&rpc_url, validation_result.chain_config.chain_id)?;
 
             // Open cache
             let cache = CacheStore::open(&config.cache_dir, validation_result.chain_config.chain_id)?;
@@ -242,10 +260,105 @@ async fn main() -> anyhow::Result<()> {
             let toml_str = config.to_toml_string()?;
             println!("{}", toml_str);
         }
-        Command::Replay(_) => {
-            println!("replay subcommand — not yet implemented");
+        Command::Replay(args) => {
+            let (chain_name, chain_config) = match validation::validate_replay(&config) {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            let rpc_url = config.effective_rpc_url(chain_name);
+            let rpc = RpcClient::new(&rpc_url, chain_config.chain_id)?;
+            let cache = CacheStore::open(&config.cache_dir, chain_config.chain_id)?;
+
+            let block_num = args.block;
+            let tx_index = args.tx_index.unwrap_or(usize::MAX);
+
+            // Verify block is cached
+            if !cache.has_block(block_num)? {
+                eprintln!(
+                    "Error: Block {} is not cached. Run `mev-backtest fetch --block {}` first.",
+                    block_num, block_num
+                );
+                std::process::exit(1);
+            }
+
+            let replayer = BlockReplayer::new(
+                tokio::runtime::Handle::current(),
+                cache,
+                rpc,
+                chain_config.chain_id,
+            );
+            let txs = replayer
+                .load_txs(block_num)
+                .map_err(|e| anyhow::anyhow!("Failed to load txs for block {}: {}", block_num, e))?;
+            let actual_count = txs.len();
+            let end_tx = tx_index.min(actual_count.saturating_sub(1));
+
+            println!(
+                "Replaying block {} on chain {} ({} txs, replaying 0..{})",
+                block_num, chain_name, actual_count, end_tx
+            );
+            println!();
+
+            let start = std::time::Instant::now();
+            let (_snapshot, results) = replayer
+                .replay_to(block_num, end_tx)
+                .map_err(|e| anyhow::anyhow!("Replay failed for block {}: {}", block_num, e))?;
+            let elapsed = start.elapsed();
+
+            println!(
+                "  {:<4} {:<66} {:<6} {:<8} {}",
+                "idx", "tx_hash", "status", "gas_used", "receipt"
+            );
+            println!("  {}", "─".repeat(100));
+
+            let mut matched = 0u64;
+            let mut total = 0u64;
+
+            for r in &results {
+                let status_str = if r.status { "ok" } else { "fail" };
+                let receipt_str = match &r.error {
+                    None => {
+                        matched += 1;
+                        "✓".to_string()
+                    }
+                    Some(_) => "✗".to_string(),
+                };
+                total += 1;
+
+                println!(
+                    "  {:<4} {:<66} {:<6} {:<8} {}",
+                    r.index, r.tx_hash, status_str, r.gas_used, receipt_str
+                );
+            }
+
+            println!();
+            let pct = if total > 0 {
+                (matched as f64 / total as f64) * 100.0
+            } else {
+                100.0
+            };
+            println!(
+                "  Receipt verification: {}/{} match ({:.1}%) — {:.2}s",
+                matched, total, pct, elapsed.as_secs_f64()
+            );
+
+            if pct < 99.0 {
+                tracing::warn!(
+                    "Receipt match rate {:.1}% is below 99% threshold",
+                    pct
+                );
+            }
         }
     }
 
     Ok(())
 }
+
+
+
+
+

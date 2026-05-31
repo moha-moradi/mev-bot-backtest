@@ -216,6 +216,13 @@ impl Config {
         Config::default()
     }
 
+    /// Resolved RPC URL: user-provided value, or the public fallback for the target chain.    
+    pub fn effective_rpc_url(&self, chain: ChainName) -> String {
+        self.rpc_url
+            .clone()
+            .unwrap_or_else(|| chain.public_rpc_url().to_string())
+    }
+
     pub fn to_toml_string(&self) -> anyhow::Result<String> {
         let value = toml::Value::try_from(self)
             .map_err(|e| anyhow::anyhow!("Failed to serialize config: {}", e))?;
@@ -254,7 +261,7 @@ Cache dir:       {}
 "#,
             chain_name,
             chain_cfg.chain_id,
-            self.rpc_url.as_deref().unwrap_or("(not set)"),
+            &self.effective_rpc_url(chain_name),
             range_mode,
             range_mode.resolve_description(),
             strat_list,

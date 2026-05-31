@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::config::Config;
+use crate::config::{ChainConfig, Config};
 use crate::types::{
     ChainName, FlashLoanProvider, GasModel, OutputFormat, RangeMode, Strategy,
 };
@@ -8,7 +8,7 @@ use crate::types::{
 #[derive(Debug)]
 pub struct ValidationResult {
     pub chain_name: ChainName,
-    pub chain_config: crate::config::ChainConfig,
+    pub chain_config: ChainConfig,
     pub range_mode: RangeMode,
     pub strategies: Vec<Strategy>,
     pub flash_loan_provider: FlashLoanProvider,
@@ -109,6 +109,83 @@ fn check_range_conflicts(cfg: &Config) -> Result<RangeMode, ValidationError> {
          Use one of: --days, --blocks, --block, or --from-block + --to-block."
             .to_string(),
     ))
+}
+
+/// Validates config for the replay subcommand.
+/// Only allows --block (single block), rejects all other range flags.
+pub fn validate_replay(config: &Config) -> Result<(ChainName, ChainConfig), ValidationError> {
+    let chain_name: ChainName = config
+        .chain
+        .parse()
+        .map_err(|e: String| ValidationError::Message(format!("Error: {e}")))?;
+
+    let chain_config = config
+        .chains
+        .get(chain_name.to_string().as_str())
+        .cloned()
+        .ok_or_else(|| {
+            ValidationError::Message(format!(
+                "Error: no [chains.{}] section found in config.",
+                chain_name
+            ))
+        })?;
+
+    // Replay only supports --block
+    let active = count_set_flags(config);
+    if active.len() > 1 {
+        return Err(ValidationError::Message(format!(
+            "Error: {} cannot be used together.\n\
+             Use exactly one of: --days, --blocks, --block, or --from-block/--to-block.",
+            active.join(" and ")
+        )));
+    }
+
+    let from = config.from_block;
+    let to = config.to_block;
+    if (from.is_some() && to.is_none()) || (from.is_none() && to.is_some()) {
+        return Err(ValidationError::Message(
+            "Error: --from-block and --to-block must be used together.".to_string(),
+        ));
+    }
+
+    // Check for non-block range flags — replay only supports --block
+    if config.days.is_some() {
+        return Err(ValidationError::Message(
+            "Error: --days is not supported by the replay subcommand. Use --block instead.".to_string(),
+        ));
+    }
+    if config.blocks.is_some() {
+        return Err(ValidationError::Message(
+            "Error: --blocks is not supported by the replay subcommand. Use --block instead.".to_string(),
+        ));
+    }
+    if config.from_block.is_some() || config.to_block.is_some() {
+        return Err(ValidationError::Message(
+            "Error: --from-block/--to-block is not supported by the replay subcommand. Use --block instead.".to_string(),
+        ));
+    }
+    if config.block.is_none() || config.block == Some(0) {
+        return Err(ValidationError::Message(
+            "Error: --block is required for the replay subcommand and must be > 0.".to_string(),
+        ));
+    }
+
+    // Validate RPC URL
+    if let Some(url) = &config.rpc_url {
+        if url.trim().is_empty() {
+            return Err(ValidationError::Message(
+                "Error: --rpc URL cannot be empty.".to_string(),
+            ));
+        }
+        if !url.starts_with("http://") && !url.starts_with("https://") {
+            return Err(ValidationError::Message(format!(
+                "Error: --rpc URL '{}' must start with http:// or https://.",
+                url
+            )));
+        }
+    }
+
+    Ok((chain_name, chain_config))
 }
 
 pub fn validate_and_resolve(config: &Config) -> Result<ValidationResult, ValidationError> {

@@ -3,6 +3,7 @@ pub mod cli;
 pub mod config;
 pub mod data;
 pub mod fetch;
+pub mod replay;
 pub mod resolver;
 pub mod rpc;
 pub mod types;

@@ -57,3 +57,22 @@ pub struct AccountData {
     pub balance: U256,
     pub code_hash: B256,
 }
+
+#[derive(Debug, Clone)]
+pub struct ExecutedTx {
+    pub tx_hash: B256,
+    pub index: u64,
+    pub status: bool,
+    pub gas_used: u64,
+    pub gas_effective: u128,
+    pub logs: Vec<ExecutedLog>,
+    pub output: Bytes,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExecutedLog {
+    pub address: Address,
+    pub topics: Vec<B256>,
+    pub data: Bytes,
+}
