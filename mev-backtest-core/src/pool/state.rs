@@ -106,6 +106,10 @@ impl PoolManager {
         self.pools.len()
     }
 
+    pub fn pool_addresses(&self) -> Vec<Address> {
+        self.pools.keys().copied().collect()
+    }
+
     /// Returns pairs of pool addresses that share at least one common token.
     /// Each pair is returned once (pool_a < pool_b by address), with the shared token.
     pub fn arbitrage_pairs(&self) -> Vec<(Address, Address, Address)> {

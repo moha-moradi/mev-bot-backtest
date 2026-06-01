@@ -11,6 +11,7 @@ pub struct BacktestRunner {
     replayer: BlockReplayer,
     pool_manager: PoolManager,
     detector: TwoHopArbDetector,
+    priority_fee_gwei: f64,
 }
 
 impl BacktestRunner {
@@ -23,7 +24,13 @@ impl BacktestRunner {
             replayer,
             pool_manager,
             detector: TwoHopArbDetector::new(min_profit_usd),
+            priority_fee_gwei: 1.0,
         }
+    }
+
+    pub fn with_priority_fee(mut self, priority_fee_gwei: f64) -> Self {
+        self.priority_fee_gwei = priority_fee_gwei;
+        self
     }
 
     /// Initialize pool manager by loading registry and fetching on-chain reserves.
@@ -66,39 +73,54 @@ impl BacktestRunner {
         );
     }
 
-    /// Replay a single block using incremental replay and detect MEV after each tx.
+    /// Replay a single block, skipping EVM execution for txs that don't interact with tracked pools.
     pub fn run_block(&mut self, block_num: u64) -> anyhow::Result<Vec<MevOpportunity>> {
-        let txs = self.replayer.load_txs(block_num)?;
+        let (block_data, txs) = self.replayer.load_block_data(block_num)?;
         if txs.is_empty() {
             return Ok(Vec::new());
         }
 
-        let timestamp = txs.first().map(|_| {
-            // Approximate: we could fetch block data for exact timestamp,
-            // but for MVP we use the replayer's built-in block access
-            0u64
-        }).unwrap_or(0);
+        let timestamp = block_data.timestamp;
+        let base_fee_per_gas = block_data.base_fee_per_gas.unwrap_or(0);
+
+        let pool_addrs: std::collections::HashSet<_> =
+            self.pool_manager.pool_addresses().into_iter().collect();
 
         let mut all_opportunities = Vec::new();
         let mut pool_manager = self.pool_manager.clone();
         let detector = &self.detector;
+        let priority_fee_gwei = self.priority_fee_gwei;
 
-        self.replayer.replay_each(block_num, |i, tx, _db| {
-            pool_manager.update_from_logs(&tx.logs);
+        self.replayer.replay_each_filtered(
+            block_num,
+            |tx, receipt_logs| {
+                tx.to.map_or(false, |to| pool_addrs.contains(&to))
+                    || receipt_logs.iter().any(|l| pool_addrs.contains(&l.address))
+            },
+            |i, tx, _db| {
+                pool_manager.update_from_logs(&tx.logs);
 
-            let opps = detector.detect(&pool_manager, block_num, i, timestamp);
-            if !opps.is_empty() {
-                tracing::info!(
-                    "Block {} tx {}: {} arb opportunities",
+                let opps = detector.detect(
+                    &pool_manager,
                     block_num,
                     i,
-                    opps.len()
+                    timestamp,
+                    base_fee_per_gas,
+                    priority_fee_gwei,
                 );
-            }
-            all_opportunities.extend(opps);
+                if !opps.is_empty() {
+                    tracing::info!(
+                        "Block {} tx {}: {} arb opportunities",
+                        block_num,
+                        i,
+                        opps.len()
+                    );
+                }
+                all_opportunities.extend(opps);
 
-            Ok(())
-        })?;
+                Ok(())
+            },
+        )?;
 
         self.pool_manager = pool_manager;
         Ok(all_opportunities)
@@ -128,5 +150,3 @@ impl BacktestRunner {
         Ok(all)
     }
 }
-
-

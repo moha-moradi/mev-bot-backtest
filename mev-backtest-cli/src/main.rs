@@ -234,7 +234,8 @@ async fn main() -> anyhow::Result<()> {
             }
 
             // Run backtest
-            let mut runner = BacktestRunner::new(replayer, pool_manager, config.min_profit_usd);
+            let mut runner = BacktestRunner::new(replayer, pool_manager, config.min_profit_usd)
+                .with_priority_fee(config.priority_fee);
             let start = std::time::Instant::now();
             let all_opportunities = runner.run_range(&resolved)?;
             let elapsed = start.elapsed();
@@ -251,19 +252,23 @@ async fn main() -> anyhow::Result<()> {
 
                 let mut table = Table::new();
                 table.set_header(vec![
-                    "Block", "Tx", "Strategy", "Pool A", "Pool B",
-                    "Input", "Profit",
+                    "Block", "Tx", "Strategy",
+                    "Profit (USD)", "Gas (USD)", "Net (USD)",
                 ]);
 
                 for opp in &all_opportunities {
+                    let net_str = if opp.net_profit_usd >= 0.0 {
+                        format!("{:.2}", opp.net_profit_usd)
+                    } else {
+                        format!("({:.2})", -opp.net_profit_usd)
+                    };
                     table.add_row(vec![
                         format!("{}", opp.block_number),
                         format!("{}", opp.tx_index),
                         format!("{}", opp.strategy),
-                        format!("{:?}", opp.pool_a),
-                        format!("{:?}", opp.pool_b),
-                        format!("{}", opp.input_amount),
-                        format!("{}", opp.expected_profit),
+                        format!("{:.4}", opp.expected_profit_usd),
+                        format!("{:.4}", opp.gas_cost_usd),
+                        net_str,
                     ]);
                 }
 

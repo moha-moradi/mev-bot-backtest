@@ -40,7 +40,7 @@ impl DBErrorMarker for DbError {
 }
 
 use crate::cache::CacheStore;
-use crate::data::{AccountData, BlockData, ExecutedLog, ExecutedTx, TxData};
+use crate::data::{AccountData, BlockData, ExecutedLog, ExecutedTx, LogData, TxData};
 use crate::rpc::RpcClient;
 
 /// Polygon BLS12-377 precompile addresses (Heimdall fork)
@@ -452,7 +452,7 @@ impl BlockReplayer {
             .ok_or_else(|| anyhow::anyhow!("Txs for block {} not found in cache", block_num))?)
     }
 
-    fn load_block_data(&self, block_num: u64) -> anyhow::Result<(BlockData, Vec<TxData>)> {
+    pub fn load_block_data(&self, block_num: u64) -> anyhow::Result<(BlockData, Vec<TxData>)> {
         let block = self
             .cache
             .get_block(block_num)?
@@ -464,7 +464,7 @@ impl BlockReplayer {
         Ok((block, txs))
     }
 
-    fn load_receipts(&self, block_num: u64) -> anyhow::Result<Vec<crate::data::ReceiptData>> {
+    pub fn load_receipts(&self, block_num: u64) -> anyhow::Result<Vec<crate::data::ReceiptData>> {
         Ok(self
             .cache
             .get_receipts(block_num)?
@@ -820,6 +820,127 @@ impl BlockReplayer {
                     .collect(),
                 output: output_bytes,
                 error: mismatch,
+            };
+
+            on_tx(i, &executed, &evm.ctx.journaled_state.database)?;
+        }
+
+        Ok(())
+    }
+
+    /// Replay a block, skipping EVM execution for txs that don't pass the filter.
+    /// For skipped txs, `ExecutedTx` is built from cached receipt data (no EVM overhead).
+    /// The filter receives the tx data and the cached receipt logs.
+    pub fn replay_each_filtered(
+        &self,
+        block_num: u64,
+        filter: impl Fn(&TxData, &[LogData]) -> bool,
+        mut on_tx: impl FnMut(usize, &ExecutedTx, &CacheDB<CachedRpcDb>) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        let (block, txs) = self.load_block_data(block_num)?;
+        let receipts = self.load_receipts(block_num)?;
+
+        let state_block = block_num.saturating_sub(1);
+        let inner_db = CachedRpcDb::new(
+            self.handle.clone(),
+            self.cache.clone(),
+            self.rpc.clone(),
+            self.chain_id,
+            state_block,
+        );
+        let mut cache_db = CacheDB::new(inner_db);
+
+        if self.chain_id == 137 {
+            register_polygon_precompiles(&mut cache_db, block_num)?;
+        }
+
+        let cfg_env = self.build_cfg_env(block_num);
+        let block_env = self.build_block_env(&block);
+
+        let ctx = Context::mainnet()
+            .with_db(cache_db)
+            .with_cfg(cfg_env)
+            .with_block(block_env);
+
+        let mut evm = ctx.build_mainnet();
+
+        for (i, tx) in txs.iter().enumerate() {
+            let receipt_logs = receipts
+                .get(i)
+                .map(|r| r.logs.as_slice())
+                .unwrap_or_default();
+
+            let executed = if filter(tx, receipt_logs) {
+                let tx_env = self.tx_data_to_tx_env(tx);
+                let exec_result = match evm.transact_commit(tx_env) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Block {} tx {} ({}) execution error: {:?}",
+                            block_num,
+                            i,
+                            tx.hash,
+                            e
+                        );
+                        ExecutionResult::Revert {
+                            gas: ResultGas::new_with_state_gas(tx.gas_limit, 0, 0, 0),
+                            logs: Vec::new(),
+                            output: Bytes::new(),
+                        }
+                    }
+                };
+
+                let receipt = receipts.get(i);
+                let mismatch = match receipt {
+                    Some(r) => Self::verify_receipt(&exec_result, r, tx.hash, block_num),
+                    None => Some("receipt not found".to_string()),
+                };
+                if let Some(ref msg) = mismatch {
+                    tracing::warn!("{}", msg);
+                }
+
+                let output_bytes = exec_result.output().cloned().unwrap_or_default();
+                ExecutedTx {
+                    tx_hash: tx.hash,
+                    index: i as u64,
+                    status: exec_result.is_success(),
+                    gas_used: exec_result.tx_gas_used(),
+                    gas_effective: tx.max_fee_per_gas,
+                    logs: exec_result
+                        .logs()
+                        .iter()
+                        .map(|l| ExecutedLog {
+                            address: l.address,
+                            topics: l.data.topics().to_vec(),
+                            data: l.data.data.clone(),
+                        })
+                        .collect(),
+                    output: output_bytes,
+                    error: mismatch,
+                }
+            } else {
+                let receipt = receipts.get(i);
+                ExecutedTx {
+                    tx_hash: tx.hash,
+                    index: i as u64,
+                    status: receipt.map(|r| r.status).unwrap_or(false),
+                    gas_used: receipt.map(|r| r.gas_used).unwrap_or(0),
+                    gas_effective: tx.max_fee_per_gas,
+                    logs: receipt
+                        .map(|r| {
+                            r.logs
+                                .iter()
+                                .map(|l| ExecutedLog {
+                                    address: l.address,
+                                    topics: l.topics.clone(),
+                                    data: l.data.clone(),
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    output: Bytes::new(),
+                    error: receipt.and_then(|_| None).or(Some("skipped".to_string())),
+                }
             };
 
             on_tx(i, &executed, &evm.ctx.journaled_state.database)?;
