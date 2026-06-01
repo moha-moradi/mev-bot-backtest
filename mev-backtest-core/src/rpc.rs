@@ -1,8 +1,10 @@
 use std::time::Duration;
 
 use alloy::consensus::Transaction;
+use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, Bytes, U256};
 use alloy::providers::{Provider, RootProvider};
+use alloy::rpc::types::eth::TransactionRequest;
 use alloy::rpc::types::{Block, Transaction as AlloyTx, TransactionReceipt};
 use tokio::time::sleep;
 use url::Url;
@@ -245,6 +247,25 @@ impl RpcClient {
             .number(block)
             .await
             .map_err(|e| anyhow::anyhow!(e))
+    }
+
+    /// Execute an `eth_call` at a historical block.
+    pub async fn call(&self, to: Address, data: Bytes, block: u64) -> anyhow::Result<Bytes> {
+        self.retry_call(|| {
+            let provider = self.provider.clone();
+            let data = data.clone();
+            async move {
+                let request = TransactionRequest::default()
+                    .with_to(to)
+                    .with_input(data);
+                provider
+                    .call(request)
+                    .block(block.into())
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))
+            }
+        })
+        .await
     }
 }
 

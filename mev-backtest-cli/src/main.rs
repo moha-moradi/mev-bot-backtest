@@ -2,6 +2,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
+use comfy_table::Table;
 use indicatif::{ProgressBar, ProgressStyle};
 use tracing_subscriber::EnvFilter;
 
@@ -9,9 +10,12 @@ use mev_backtest_core::cache::{CacheStore, RunManifest};
 use mev_backtest_core::cli::{Cli, Command};
 use mev_backtest_core::config::CliOverrides;
 use mev_backtest_core::fetch::Fetcher;
+
+use mev_backtest_core::pool::state::PoolManager;
 use mev_backtest_core::replay::BlockReplayer;
 use mev_backtest_core::resolver::RangeResolver;
 use mev_backtest_core::rpc::RpcClient;
+use mev_backtest_core::run::BacktestRunner;
 use mev_backtest_core::validation;
 
 fn setup_logging(verbose: bool, quiet: bool) {
@@ -166,6 +170,105 @@ async fn main() -> anyhow::Result<()> {
                 }
             };
             print_startup_plan(&validation_result, &config);
+
+            let rpc_url = config.effective_rpc_url(validation_result.chain_name);
+            let rpc = RpcClient::new(&rpc_url, validation_result.chain_config.chain_id)?;
+            let cache = CacheStore::open(&config.cache_dir, validation_result.chain_config.chain_id)?;
+
+            // Resolve block range
+            let resolver = RangeResolver::new(rpc.clone());
+            let resolved = match resolver.resolve(&validation_result.range_mode).await {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("Error: failed to resolve block range: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            let run_id = format!(
+                "run_{}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+            );
+
+            let manifest = RunManifest {
+                run_id: run_id.clone(),
+                chain: validation_result.chain_name.to_string(),
+                start_block: resolved.start_block,
+                end_block: resolved.end_block,
+                resolved_at: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+                range_mode: resolved.mode_string(),
+                strategies: validation_result.strategies.iter().map(|s| s.to_string()).collect(),
+                flash_loan_provider: validation_result.flash_loan_provider.to_string(),
+            };
+            cache.put_manifest(&manifest)?;
+
+            println!("Run ID: {}", run_id);
+            println!("{}", resolved.summary());
+            println!();
+
+            // Build replayer
+            let replayer = BlockReplayer::new(
+                tokio::runtime::Handle::current(),
+                cache,
+                rpc.clone(),
+                validation_result.chain_config.chain_id,
+            );
+
+            // Init pool manager
+            let mut pool_manager = PoolManager::new();
+            let prev_block = resolved.start_block.saturating_sub(1);
+            let registry_path = validation_result.chain_config.pools_registry_path.as_deref();
+            if !validation_result.strategies.is_empty() {
+                BacktestRunner::init_pools(
+                    &mut pool_manager,
+                    registry_path,
+                    &rpc,
+                    prev_block,
+                ).await;
+            }
+
+            // Run backtest
+            let mut runner = BacktestRunner::new(replayer, pool_manager, config.min_profit_usd);
+            let start = std::time::Instant::now();
+            let all_opportunities = runner.run_range(&resolved)?;
+            let elapsed = start.elapsed();
+
+            // Print results
+            if all_opportunities.is_empty() {
+                println!("No MEV opportunities detected in the specified range.");
+            } else {
+                println!(
+                    "\nDetected {} MEV opportunity(ies) in {:.2}s:\n",
+                    all_opportunities.len(),
+                    elapsed.as_secs_f64()
+                );
+
+                let mut table = Table::new();
+                table.set_header(vec![
+                    "Block", "Tx", "Strategy", "Pool A", "Pool B",
+                    "Input", "Profit",
+                ]);
+
+                for opp in &all_opportunities {
+                    table.add_row(vec![
+                        format!("{}", opp.block_number),
+                        format!("{}", opp.tx_index),
+                        format!("{}", opp.strategy),
+                        format!("{:?}", opp.pool_a),
+                        format!("{:?}", opp.pool_b),
+                        format!("{}", opp.input_amount),
+                        format!("{}", opp.expected_profit),
+                    ]);
+                }
+
+                println!("{table}");
+            }
         }
         Command::Fetch(_) => {
             let validation_result = match validation::validate_and_resolve_for(&config, false) {

@@ -734,6 +734,99 @@ impl BlockReplayer {
         let tx_count = txs.len();
         self.replay_to(block_num, tx_count.saturating_sub(1))
     }
+
+    /// Replay a block tx-by-tx, invoking `on_tx` after each transaction.
+    /// Maintains a single EVM context across all txs — efficient for MEV detection.
+    ///
+    /// The callback receives (tx_index, &ExecutedTx, &CacheDB<CachedRpcDb>).
+    pub fn replay_each(
+        &self,
+        block_num: u64,
+        mut on_tx: impl FnMut(usize, &ExecutedTx, &CacheDB<CachedRpcDb>) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        let (block, txs) = self.load_block_data(block_num)?;
+        let receipts = self.load_receipts(block_num)?;
+
+        let state_block = block_num.saturating_sub(1);
+        let inner_db = CachedRpcDb::new(
+            self.handle.clone(),
+            self.cache.clone(),
+            self.rpc.clone(),
+            self.chain_id,
+            state_block,
+        );
+        let mut cache_db = CacheDB::new(inner_db);
+
+        if self.chain_id == 137 {
+            register_polygon_precompiles(&mut cache_db, block_num)?;
+        }
+
+        let cfg_env = self.build_cfg_env(block_num);
+        let block_env = self.build_block_env(&block);
+
+        let ctx = Context::mainnet()
+            .with_db(cache_db)
+            .with_cfg(cfg_env)
+            .with_block(block_env);
+
+        let mut evm = ctx.build_mainnet();
+
+        for (i, tx) in txs.iter().enumerate() {
+            let tx_env = self.tx_data_to_tx_env(tx);
+
+            let exec_result = match evm.transact_commit(tx_env) {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!(
+                        "Block {} tx {} ({}) execution error: {:?}",
+                        block_num,
+                        i,
+                        tx.hash,
+                        e
+                    );
+                    ExecutionResult::Revert {
+                        gas: ResultGas::new_with_state_gas(tx.gas_limit, 0, 0, 0),
+                        logs: Vec::new(),
+                        output: Bytes::new(),
+                    }
+                }
+            };
+
+            let receipt = receipts.get(i);
+            let mismatch = match receipt {
+                Some(r) => Self::verify_receipt(&exec_result, r, tx.hash, block_num),
+                None => Some("receipt not found".to_string()),
+            };
+
+            if let Some(ref msg) = mismatch {
+                tracing::warn!("{}", msg);
+            }
+
+            let output_bytes = exec_result.output().cloned().unwrap_or_default();
+            let executed = ExecutedTx {
+                tx_hash: tx.hash,
+                index: i as u64,
+                status: exec_result.is_success(),
+                gas_used: exec_result.tx_gas_used(),
+                gas_effective: tx.max_fee_per_gas,
+                logs: exec_result
+                    .logs()
+                    .iter()
+                    .map(|l| ExecutedLog {
+                        address: l.address,
+                        topics: l.data.topics().to_vec(),
+                        data: l.data.data.clone(),
+                    })
+                    .collect(),
+                output: output_bytes,
+                error: mismatch,
+            };
+
+            on_tx(i, &executed, &evm.ctx.journaled_state.database)?;
+        }
+
+        Ok(())
+    }
 }
 
 /// A forkable state snapshot wrapping CacheDB.
