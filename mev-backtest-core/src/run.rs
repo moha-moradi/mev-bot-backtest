@@ -12,6 +12,7 @@ pub struct BacktestRunner {
     pool_manager: PoolManager,
     detector: TwoHopArbDetector,
     priority_fee_gwei: f64,
+    fast_mode: bool,
 }
 
 impl BacktestRunner {
@@ -25,11 +26,26 @@ impl BacktestRunner {
             pool_manager,
             detector: TwoHopArbDetector::new(min_profit_usd),
             priority_fee_gwei: 1.0,
+            fast_mode: false,
         }
     }
 
     pub fn with_priority_fee(mut self, priority_fee_gwei: f64) -> Self {
         self.priority_fee_gwei = priority_fee_gwei;
+        self
+    }
+
+    /// Enable fast mode: skip token address widening in tx filter.
+    /// Only pools addresses are matched, not their tokens.
+    pub fn with_fast_mode(mut self, fast: bool) -> Self {
+        self.fast_mode = fast;
+        self
+    }
+
+    /// Set a custom gas limit for arb transaction cost estimation.
+    pub fn with_gas_limit(mut self, gas_limit: u64) -> Self {
+        self.detector = TwoHopArbDetector::new(self.detector.min_profit_usd)
+            .with_gas_limit(gas_limit);
         self
     }
 
@@ -74,6 +90,7 @@ impl BacktestRunner {
     }
 
     /// Replay a single block, skipping EVM execution for txs that don't interact with tracked pools.
+    /// When `fast_mode` is false, also replays txs that touch any token address tracked by the pools.
     pub fn run_block(&mut self, block_num: u64) -> anyhow::Result<Vec<MevOpportunity>> {
         let (block_data, txs) = self.replayer.load_block_data(block_num)?;
         if txs.is_empty() {
@@ -85,17 +102,26 @@ impl BacktestRunner {
 
         let pool_addrs: std::collections::HashSet<_> =
             self.pool_manager.pool_addresses().into_iter().collect();
+        let token_addrs: std::collections::HashSet<_> =
+            self.pool_manager.token_addresses().into_iter().collect();
 
         let mut all_opportunities = Vec::new();
         let mut pool_manager = self.pool_manager.clone();
         let detector = &self.detector;
         let priority_fee_gwei = self.priority_fee_gwei;
+        let fast_mode = self.fast_mode;
 
         self.replayer.replay_each_filtered(
             block_num,
             |tx, receipt_logs| {
-                tx.to.map_or(false, |to| pool_addrs.contains(&to))
-                    || receipt_logs.iter().any(|l| pool_addrs.contains(&l.address))
+                tx.to.map_or(false, |to| {
+                    pool_addrs.contains(&to)
+                        || (!fast_mode && token_addrs.contains(&to))
+                })
+                    || receipt_logs.iter().any(|l| {
+                        pool_addrs.contains(&l.address)
+                            || (!fast_mode && token_addrs.contains(&l.address))
+                    })
             },
             |i, tx, _db| {
                 pool_manager.update_from_logs(&tx.logs);

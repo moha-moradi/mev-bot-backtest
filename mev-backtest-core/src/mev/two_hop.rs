@@ -1,4 +1,4 @@
-use alloy::primitives::{Address, U256};
+use alloy::primitives::{address, Address, U256};
 
 use crate::mev::opportunity::MevOpportunity;
 use crate::mev::pricing;
@@ -6,16 +6,26 @@ use crate::pool::math::optimal_two_hop_arb;
 use crate::pool::state::{PoolManager, PoolState};
 use crate::types::Strategy;
 
-const GAS_UNITS: u64 = 200_000;
+const DEFAULT_GAS_LIMIT: u64 = 200_000;
 
 /// Detects two-hop arbitrage opportunities between V2 pools.
 pub struct TwoHopArbDetector {
     pub min_profit_usd: f64,
+    pub gas_limit: u64,
 }
 
 impl TwoHopArbDetector {
     pub fn new(min_profit_usd: f64) -> Self {
-        TwoHopArbDetector { min_profit_usd }
+        TwoHopArbDetector {
+            min_profit_usd,
+            gas_limit: DEFAULT_GAS_LIMIT,
+        }
+    }
+
+    /// Set a custom gas limit for arb transaction cost estimation.
+    pub fn with_gas_limit(mut self, gas_limit: u64) -> Self {
+        self.gas_limit = gas_limit;
+        self
     }
 
     /// Detect arbitrage opportunities across all pool pairs in the manager.
@@ -88,14 +98,16 @@ impl TwoHopArbDetector {
 
         let profit_u256 = U256::from(result.profit);
 
-        let gas_cost_wei = (GAS_UNITS as u128)
+        let gas_cost_wei = (self.gas_limit as u128)
             .checked_mul(base_fee_per_gas + (priority_fee_gwei * 1e9) as u128)
             .unwrap_or(u128::MAX);
         let gas_cost_matic = gas_cost_wei as f64 / 1e18;
-        let gas_cost_usd = gas_cost_matic * pricing::matic_usd_price();
+        let matic_price = pricing::onchain_usd_price(address!("0d500b1d8e8ef31e21c99d1db9a6444d3adf1270"), pm)
+            .unwrap_or_else(pricing::matic_usd_price);
+        let gas_cost_usd = gas_cost_matic * matic_price;
 
-        let expected_profit_usd = pricing::raw_amount_to_usd(token_out, result.profit)
-            .unwrap_or(0.0);
+        let expected_profit_usd = pricing::raw_amount_to_usd_onchain(token_out, result.profit, pm)
+            .unwrap_or_else(|| pricing::raw_amount_to_usd(token_out, result.profit).unwrap_or(0.0));
         let net_profit_usd = expected_profit_usd - gas_cost_usd;
 
         if net_profit_usd < self.min_profit_usd {

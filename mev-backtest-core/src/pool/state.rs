@@ -1,7 +1,11 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use alloy::primitives::{b256, Address, Bytes, B256, U256};
+use futures::future::join_all;
 use serde::{Deserialize, Serialize};
+use tokio::sync::Semaphore;
 
 use crate::data::ExecutedLog;
 use crate::rpc::RpcClient;
@@ -59,6 +63,8 @@ pub struct PoolManager {
     pools: HashMap<Address, PoolState>,
     /// token address -> list of pool addresses that trade this token
     token_index: HashMap<Address, Vec<Address>>,
+    /// Cached arbitrage pairs (invalidated on add_pool)
+    pairs_cache: RefCell<Option<Vec<(Address, Address, Address)>>>,
 }
 
 impl PoolManager {
@@ -66,6 +72,7 @@ impl PoolManager {
         PoolManager {
             pools: HashMap::new(),
             token_index: HashMap::new(),
+            pairs_cache: RefCell::new(None),
         }
     }
 
@@ -73,6 +80,7 @@ impl PoolManager {
         PoolManager {
             pools: HashMap::with_capacity(capacity),
             token_index: HashMap::with_capacity(capacity),
+            pairs_cache: RefCell::new(None),
         }
     }
 
@@ -88,6 +96,7 @@ impl PoolManager {
             .entry(info.token1)
             .or_default()
             .push(addr);
+        *self.pairs_cache.borrow_mut() = None; // invalidate cache
     }
 
     pub fn get(&self, address: &Address) -> Option<&PoolState> {
@@ -110,9 +119,37 @@ impl PoolManager {
         self.pools.keys().copied().collect()
     }
 
+    /// Returns all unique token addresses tracked by the pool manager.
+    pub fn token_addresses(&self) -> Vec<Address> {
+        self.token_index.keys().copied().collect()
+    }
+
+    /// Returns all pool addresses that trade the given token.
+    pub fn pools_for_token(&self, token: &Address) -> Option<&[Address]> {
+        self.token_index.get(token).map(|v| v.as_slice())
+    }
+
+    /// Find a pool that trades both token_a and token_b (typically WMATIC pair discovery).
+    pub fn find_pair_pool(&self, token_a: &Address, token_b: &Address) -> Option<Address> {
+        let pools_a = self.token_index.get(token_a)?;
+        let pools_b = self.token_index.get(token_b)?;
+        // Find the first address common to both sets
+        // Use the smaller set for iteration
+        let (smaller, larger) = if pools_a.len() < pools_b.len() {
+            (pools_a, pools_b)
+        } else {
+            (pools_b, pools_a)
+        };
+        smaller.iter().find(|addr| larger.contains(addr)).copied()
+    }
+
     /// Returns pairs of pool addresses that share at least one common token.
     /// Each pair is returned once (pool_a < pool_b by address), with the shared token.
+    /// Result is cached and invalidated on add_pool.
     pub fn arbitrage_pairs(&self) -> Vec<(Address, Address, Address)> {
+        if let Some(cached) = &*self.pairs_cache.borrow() {
+            return cached.clone();
+        }
         let mut pairs = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
@@ -129,6 +166,7 @@ impl PoolManager {
             }
         }
 
+        *self.pairs_cache.borrow_mut() = Some(pairs.clone());
         pairs
     }
 
@@ -166,10 +204,29 @@ impl PoolManager {
     }
 
     /// Initialize pool reserves from on-chain `getReserves()` calls at a historical block.
+    /// Fetches all pool reserves in parallel, capped at 20 concurrent calls.
     pub async fn init_from_rpc(&mut self, rpc: &RpcClient, block_num: u64) {
         let pool_addrs: Vec<Address> = self.pools.keys().copied().collect();
-        for addr in &pool_addrs {
-            match Self::fetch_v2_reserves(rpc, *addr, block_num).await {
+        let cap = pool_addrs.len().min(20).max(1);
+        let semaphore = Arc::new(Semaphore::new(cap));
+
+        let tasks: Vec<_> = pool_addrs
+            .iter()
+            .map(|addr| {
+                let rpc = rpc.clone();
+                let sem = Arc::clone(&semaphore);
+                let addr = *addr;
+                async move {
+                    let _permit = sem.acquire_owned().await.ok();
+                    Self::fetch_v2_reserves(&rpc, addr, block_num).await
+                }
+            })
+            .collect();
+
+        let results = join_all(tasks).await;
+
+        for (addr, result) in pool_addrs.iter().zip(results) {
+            match result {
                 Some((r0, r1)) => {
                     if let Some(PoolState::UniswapV2(state)) = self.pools.get_mut(addr) {
                         state.reserve0 = r0;

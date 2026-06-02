@@ -54,6 +54,8 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             export_path: Some(args.export_path.clone()),
             cache_dir: Some(args.cache_dir.clone()),
             parallelism: args.parallelism,
+            fast_mode: if args.fast_mode { Some(true) } else { None },
+            gas_limit: Some(args.gas_limit),
         },
         Command::Fetch(args) => CliOverrides {
             days: args.block_range.days,
@@ -73,6 +75,8 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             export_path: None,
             cache_dir: None,
             parallelism: args.parallelism,
+            fast_mode: None,
+            gas_limit: None,
         },
         Command::Replay(args) => CliOverrides {
             days: None,
@@ -92,6 +96,8 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             export_path: None,
             cache_dir: Some(args.cache_dir.clone()),
             parallelism: None,
+            fast_mode: None,
+            gas_limit: None,
         },
         Command::Report | Command::Config => CliOverrides {
             days: None,
@@ -111,6 +117,8 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             export_path: None,
             cache_dir: None,
             parallelism: None,
+            fast_mode: None,
+            gas_limit: None,
         },
     }
 }
@@ -235,7 +243,9 @@ async fn main() -> anyhow::Result<()> {
 
             // Run backtest
             let mut runner = BacktestRunner::new(replayer, pool_manager, config.min_profit_usd)
-                .with_priority_fee(config.priority_fee);
+                .with_priority_fee(config.priority_fee)
+                .with_fast_mode(config.fast_mode)
+                .with_gas_limit(config.gas_limit);
             let start = std::time::Instant::now();
             let all_opportunities = runner.run_range(&resolved)?;
             let elapsed = start.elapsed();

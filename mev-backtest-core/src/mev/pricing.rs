@@ -3,6 +3,8 @@ use std::sync::OnceLock;
 
 use alloy::primitives::{address, Address};
 
+use crate::pool::state::{PoolManager, PoolState};
+
 struct TokenInfo {
     decimals: u8,
     usd_price: f64,
@@ -55,4 +57,80 @@ pub fn raw_amount_to_usd(token: Address, raw_amount: u128) -> Option<f64> {
 
 pub fn matic_usd_price() -> f64 {
     0.50
+}
+
+// ---- On-chain pricing via PoolManager reserves ----
+
+const WMATIC: Address = address!("0d500b1d8e8ef31e21c99d1db9a6444d3adf1270");
+const USDC: Address = address!("2791bca1f2de4661ed88a30c99a7a9449aa84174");
+const USDT: Address = address!("c2132d05d31c914a87c6611c10748aeb04b58e8f");
+const DAI: Address = address!("8f3cf7ad23cd3cadbd9735aff958023239c6a063");
+
+const STABLECOINS: [Address; 3] = [USDC, USDT, DAI];
+
+fn is_stablecoin(addr: Address) -> bool {
+    STABLECOINS.contains(&addr)
+}
+
+/// Derive WMATIC/USD price from a WMATIC/stablecoin pool in the manager.
+fn onchain_wmatic_usd_price(pm: &PoolManager) -> Option<f64> {
+    for &stable in &STABLECOINS {
+        let pool_addr = pm.find_pair_pool(&WMATIC, &stable)?;
+        let pool = pm.get(&pool_addr)?;
+        let PoolState::UniswapV2(s) = pool;
+        if s.reserve0 > 0 && s.reserve1 > 0 {
+            return if s.info.token0 == WMATIC {
+                Some(s.reserve1 as f64 / s.reserve0 as f64)
+            } else {
+                Some(s.reserve0 as f64 / s.reserve1 as f64)
+            };
+        }
+    }
+    None
+}
+
+/// Compute USD price of a token using on-chain pool reserves from PoolManager.
+/// Falls back to hardcoded price if no WMATIC pair is available.
+pub fn onchain_usd_price(token: Address, pm: &PoolManager) -> Option<f64> {
+    if is_stablecoin(token) {
+        return Some(1.0);
+    }
+
+    let wmatic_usd = onchain_wmatic_usd_price(pm)?;
+
+    if token == WMATIC {
+        return Some(wmatic_usd);
+    }
+
+    // Find a WMATIC pair for the token
+    let pool_addr = pm.find_pair_pool(&token, &WMATIC)?;
+    let pool = pm.get(&pool_addr)?;
+    let (reserve_token, reserve_wmatic) = match pool {
+        PoolState::UniswapV2(s) => {
+            if s.info.token0 == WMATIC {
+                (s.reserve1, s.reserve0)
+            } else if s.info.token1 == WMATIC {
+                (s.reserve0, s.reserve1)
+            } else {
+                return None;
+            }
+        }
+    };
+
+    if reserve_token == 0 || reserve_wmatic == 0 {
+        return None;
+    }
+
+    let token_price_in_wmatic = reserve_wmatic as f64 / reserve_token as f64;
+    Some(token_price_in_wmatic * wmatic_usd)
+}
+
+/// Compute USD value of a raw token amount using on-chain pricing.
+/// Falls back to the hardcoded price map if on-chain data is unavailable.
+pub fn raw_amount_to_usd_onchain(token: Address, raw_amount: u128, pm: &PoolManager) -> Option<f64> {
+    let price = onchain_usd_price(token, pm)
+        .or_else(|| token_usd_price(token))?;
+    let decimals = token_decimals(token)?;
+    let adjusted = raw_amount as f64 / 10u64.pow(decimals as u32) as f64;
+    Some(adjusted * price)
 }

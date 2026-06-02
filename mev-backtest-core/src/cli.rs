@@ -122,6 +122,14 @@ pub struct RunArgs {
     /// Concurrent block workers (default: CPU core count)
     #[arg(long, value_name = "N", help_heading = "Output")]
     pub parallelism: Option<u64>,
+
+    /// Fast mode: skip token address widening in tx filter (faster, less accurate)
+    #[arg(long, help_heading = "Output")]
+    pub fast_mode: bool,
+
+    /// Gas limit for arb transaction cost estimation (default: 200000)
+    #[arg(long, default_value_t = 200_000, value_name = "GAS", help_heading = "Gas Model")]
+    pub gas_limit: u64,
 }
 
 #[derive(Args, Debug, Clone)]

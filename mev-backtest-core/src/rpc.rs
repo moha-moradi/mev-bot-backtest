@@ -5,7 +5,7 @@ use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, Bytes, U256};
 use alloy::providers::{Provider, RootProvider};
 use alloy::rpc::types::eth::TransactionRequest;
-use alloy::rpc::types::{Block, Transaction as AlloyTx, TransactionReceipt};
+use alloy::rpc::types::{Block, Filter, Log, Transaction as AlloyTx, TransactionReceipt};
 use tokio::time::sleep;
 use url::Url;
 
@@ -108,6 +108,20 @@ impl RpcClient {
                     .map_err(|e| anyhow::anyhow!(e))?
                     .ok_or_else(|| anyhow::anyhow!("Block {} not found", block_number))?;
                 Ok(block.header.timestamp)
+            }
+        })
+        .await
+    }
+
+    pub async fn get_logs(&self, filter: &Filter) -> anyhow::Result<Vec<Log>> {
+        self.retry_call(|| {
+            let provider = self.provider.clone();
+            let filter = filter.clone();
+            async move {
+                provider
+                    .get_logs(&filter)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))
             }
         })
         .await
@@ -247,6 +261,25 @@ impl RpcClient {
             .number(block)
             .await
             .map_err(|e| anyhow::anyhow!(e))
+    }
+
+    /// Estimate gas for a transaction.
+    /// Returns gas units required.
+    pub async fn estimate_gas(&self, to: Address, data: Bytes) -> anyhow::Result<u64> {
+        self.retry_call(|| {
+            let provider = self.provider.clone();
+            let data = data.clone();
+            async move {
+                let request = TransactionRequest::default()
+                    .with_to(to)
+                    .with_input(data);
+                provider
+                    .estimate_gas(request)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))
+            }
+        })
+        .await
     }
 
     /// Execute an `eth_call` at a historical block.

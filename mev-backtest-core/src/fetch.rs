@@ -73,44 +73,6 @@ impl Fetcher {
         let cap = self.parallelism.min(20);
         let semaphore = Arc::new(Semaphore::new(cap));
 
-        let mut handles = Vec::new();
-        let fetched = Arc::new(std::sync::atomic::AtomicU64::new(0));
-        let cached = Arc::new(std::sync::atomic::AtomicU64::new(0));
-
-        for block_num in range.start_block..=range.end_block {
-            let permit = semaphore.clone().acquire_owned().await?;
-            let fetcher = Arc::new(self); // borrow self via Arc
-            let fetched = fetched.clone();
-            let cached = cached.clone();
-
-            // We need to work around the self-borrow. Use a separate closure.
-            // Actually, let's use a simpler approach: collect all blocks,
-            // then process with semaphore.
-            handles.push(async move {
-                let _permit = permit;
-                // Check cache first
-                let has = fetcher.cache.has_block(block_num).unwrap_or(false);
-                if has {
-                    cached.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    return Ok::<_, anyhow::Error>(false);
-                }
-                match fetcher.fetch_single_block(block_num).await {
-                    Ok(()) => {
-                        fetched.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        Ok(true)
-                    }
-                    Err(e) => Err(e),
-                }
-            });
-        }
-
-        // Actually this approach has borrow issues. Let me restructure.
-        // The handles vec collects futures that borrow self.
-        // We need to process differently.
-
-        // Restructure: process blocks in chunks with semaphore
-        drop(handles);
-
         let mut summary = FetchSummary {
             total_blocks: range.block_count,
             ..Default::default()

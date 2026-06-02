@@ -18,6 +18,12 @@ pub struct ChainConfig {
     pub uniswap_v3_factory: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pools_registry_path: Option<String>,
+    /// Uniswap V2 factory addresses for on-chain pool discovery
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uniswap_v2_factories: Option<Vec<String>>,
+    /// Block number to start pool discovery scan from (default: genesis)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pool_discovery_start_block: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +61,14 @@ pub struct Config {
     pub cache_dir: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parallelism: Option<u64>,
+
+    /// Fast mode: skip token address widening in tx filter
+    #[serde(default)]
+    pub fast_mode: bool,
+
+    /// Gas limit for arb transaction cost estimation
+    #[serde(default = "default_gas_limit")]
+    pub gas_limit: u64,
 
     // Block range (not serialized to TOML directly, handled via CLI merge)
     #[serde(skip)]
@@ -113,6 +127,10 @@ fn default_cache_dir() -> String {
     "./cache".to_string()
 }
 
+fn default_gas_limit() -> u64 {
+    200_000
+}
+
 impl Default for Config {
     fn default() -> Self {
         Config {
@@ -128,6 +146,8 @@ impl Default for Config {
             export_path: default_export_path(),
             cache_dir: default_cache_dir(),
             parallelism: None,
+            fast_mode: false,
+            gas_limit: default_gas_limit(),
             days: None,
             blocks: None,
             block: None,
@@ -141,6 +161,10 @@ impl Default for Config {
 
 fn default_chains() -> HashMap<String, ChainConfig> {
     let mut m = HashMap::new();
+    let polygon_factories = vec![
+        "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32".to_string(), // QuickSwap
+        "0x9e5A52f57b3038F1B8EeE45F28b3C1960e1fC6b".to_string(), // SushiSwap
+    ];
     m.insert(
         "polygon".to_string(),
         ChainConfig {
@@ -149,8 +173,13 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             aave_v3_pool: Some("0x794a61358D6845594F94dc1DB02A252b5b4814aD".to_string()),
             uniswap_v3_factory: Some("0x1F98431c8aD98523631AE4a59f267346ea31F984".to_string()),
             pools_registry_path: Some("./pools/polygon.json".to_string()),
+            uniswap_v2_factories: Some(polygon_factories),
+            pool_discovery_start_block: None,
         },
     );
+    let avalanche_factories = vec![
+        "0x9e5A52f57b3038F1B8EeE45F28b3C1960e1fC6b".to_string(), // SushiSwap (Trader Joe uses different)
+    ];
     m.insert(
         "avalanche".to_string(),
         ChainConfig {
@@ -159,8 +188,14 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             aave_v3_pool: Some("0x69FA688f1Dc47d4B5d8029D5a35FB7a548E0B9b0".to_string()),
             uniswap_v3_factory: Some("0x740bDAebB6F93dB927d3bc8E2fE5EDF4343B2925".to_string()),
             pools_registry_path: Some("./pools/avalanche.json".to_string()),
+            uniswap_v2_factories: Some(avalanche_factories),
+            pool_discovery_start_block: None,
         },
     );
+    let bsc_factories = vec![
+        "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73".to_string(), // PancakeSwap V2
+        "0x9e5A52f57b3038F1B8EeE45F28b3C1960e1fC6b".to_string(), // SushiSwap
+    ];
     m.insert(
         "bsc".to_string(),
         ChainConfig {
@@ -169,6 +204,8 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             aave_v3_pool: Some("0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2".to_string()),
             uniswap_v3_factory: Some("0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7".to_string()),
             pools_registry_path: Some("./pools/bsc.json".to_string()),
+            uniswap_v2_factories: Some(bsc_factories),
+            pool_discovery_start_block: None,
         },
     );
     m.insert(
@@ -179,8 +216,13 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             aave_v3_pool: Some("0x794a61358D6845594F94dc1DB02A252b5b4814aD".to_string()),
             uniswap_v3_factory: Some("0x1F98431c8aD98523631AE4a59f267346ea31F984".to_string()),
             pools_registry_path: Some("./pools/arbitrum.json".to_string()),
+            uniswap_v2_factories: None,
+            pool_discovery_start_block: None,
         },
     );
+    let base_factories = vec![
+        "0x8909Dc15e40173Ff4699343b6eB8132c0eE88a14".to_string(), // Aerodrome
+    ];
     m.insert(
         "base".to_string(),
         ChainConfig {
@@ -189,8 +231,15 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             aave_v3_pool: Some("0xA238Dd80C259a72e81d7e4664a9801593F98d1c5".to_string()),
             uniswap_v3_factory: Some("0x33128a8fC17869897dcE68Ed026d694621f6FDfD".to_string()),
             pools_registry_path: Some("./pools/base.json".to_string()),
+            uniswap_v2_factories: Some(base_factories),
+            pool_discovery_start_block: None,
         },
     );
+    let ethereum_factories = vec![
+        "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f".to_string(), // Uniswap V2
+        "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac".to_string(), // SushiSwap
+        "0xB3e281E8c6c888A5BcBf1108E4aC13dA3F5B1c9".to_string(), // ShibaSwap
+    ];
     m.insert(
         "ethereum".to_string(),
         ChainConfig {
@@ -199,8 +248,13 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             aave_v3_pool: Some("0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2".to_string()),
             uniswap_v3_factory: Some("0x1F98431c8aD98523631AE4a59f267346ea31F984".to_string()),
             pools_registry_path: Some("./pools/ethereum.json".to_string()),
+            uniswap_v2_factories: Some(ethereum_factories),
+            pool_discovery_start_block: None,
         },
     );
+    let optimism_factories = vec![
+        "0x9e5A52f57b3038F1B8EeE45F28b3C1960e1fC6b".to_string(), // SushiSwap
+    ];
     m.insert(
         "optimism".to_string(),
         ChainConfig {
@@ -209,6 +263,8 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             aave_v3_pool: Some("0x794a61358D6845594F94dc1DB02A252b5b4814aD".to_string()),
             uniswap_v3_factory: Some("0x1F98431c8aD98523631AE4a59f267346ea31F984".to_string()),
             pools_registry_path: Some("./pools/optimism.json".to_string()),
+            uniswap_v2_factories: Some(optimism_factories),
+            pool_discovery_start_block: None,
         },
     );
     m
@@ -313,6 +369,8 @@ pub struct CliOverrides {
     pub export_path: Option<String>,
     pub cache_dir: Option<String>,
     pub parallelism: Option<u64>,
+    pub fast_mode: Option<bool>,
+    pub gas_limit: Option<u64>,
 }
 
 impl Config {
@@ -367,6 +425,12 @@ impl Config {
         }
         if let Some(v) = &overrides.parallelism {
             self.parallelism = Some(*v);
+        }
+        if let Some(v) = &overrides.fast_mode {
+            self.fast_mode = *v;
+        }
+        if let Some(v) = &overrides.gas_limit {
+            self.gas_limit = *v;
         }
     }
 }

@@ -13,6 +13,7 @@ pub struct ValidationResult {
     pub strategies: Vec<Strategy>,
     pub flash_loan_provider: FlashLoanProvider,
     pub parallelism: usize,
+    pub fast_mode: bool,
 }
 
 #[derive(Debug)]
@@ -344,5 +345,6 @@ pub fn validate_and_resolve_for(config: &Config, check_strategies: bool) -> Resu
         strategies,
         flash_loan_provider: provider,
         parallelism,
+        fast_mode: config.fast_mode,
     })
 }
