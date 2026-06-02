@@ -1,6 +1,8 @@
 pub mod decoders;
 pub mod dex_type;
 pub mod discovery;
+pub mod factory_verify;
+pub mod graph_client;
 pub mod math;
 pub mod price_graph;
 pub mod registry;

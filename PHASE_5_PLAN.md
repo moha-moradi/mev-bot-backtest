@@ -1,8 +1,8 @@
-# Phase 5: Multi-DEX Arbitrage Engine (V2+V3+Curve+Balancer)
+# Phase 5: Multi-DEX Arbitrage Engine (V2+V3+Fork)
 
 **Builds on**: Phase 4 (TwoHopArb V2 Detection) + our current work: V3 quoting, tick-traversal, mixed-DEX arb detection, V3 init_from_rpc.
 
-**Goal**: Complete the full multi-DEX price graph pipeline so the backtester can detect two-hop arbitrage across any combination of V2, V3, Curve, and Balancer pools on Polygon.
+**Goal**: Complete the full multi-DEX price graph pipeline so the backtester can detect two-hop arbitrage across any combination of V2, V3 pools on Polygon.
 
 ---
 
@@ -25,8 +25,6 @@ Query TheGraph for pools sorted by volume/TVL per DEX type.
 | GraphQL client module | ⬜ | HTTP POST to subgraph URL, parse JSON response |
 | V2 pools query | ⬜ | `pools(first: 1000, orderBy: volumeUSD, orderDirection: desc) { id token0 { id } token1 { id } feeTier }` |
 | V3 pools query | ⬜ | Same shape; extract tickSpacing |
-| Curve pools query | ⬜ | Curve registry subgraph |
-| Balancer pools query | ⬜ | Balancer subgraph (poolId, tokens, weights) |
 | Rate limiting | ⬜ | Polite delay between queries; retry on 429 |
 | Output: `Vec<RawPoolEntry>` | ⬜ | Unified struct before factory filtering |
 
@@ -40,26 +38,22 @@ For each candidate pool from TheGraph, call the canonical factory's `getPool(tok
 |------|--------|---------|
 | Uniswap V2 `getPair()` call | ⬜ | Selector `0xe6a43905` — returns pair address |
 | Uniswap V3 `getPool()` call | ⬜ | Selector `0x1698ee82` — returns pool address |
-| Curve pool validation | ⬜ | Check pool exists in Curve registry |
-| Balancer pool validation | ⬜ | Check poolId exists in Balancer Vault |
 | Factory address config | ⬜ | Hardcoded in `config.rs` (see `config.rs:162-271`) |
 | Batch verification | ⬜ | Parallel eth_call with semaphore (reuse pattern from `init_from_rpc`) |
-| Minimum count enforcement | ⬜ | Keep only top N pools that pass verification (V2≥100, V3≥100, Curve≥20, Balancer≥20) |
+| Minimum count enforcement | ⬜ | Keep only top N pools that pass verification (V2≥100, V3≥100) |
 
 **Depends on**: 5.1.1 (candidates to verify).
 
 ### 5.1.3 Pool registry generation
 
-Script or CLI subcommand to query TheGraph → verify on-chain → write `pools/polygon_{v2,v3,curve,balancer}.json`.
+Script or CLI subcommand to query TheGraph → verify on-chain → write `pools/polygon_{v2,v3}.json`.
 
 | Item | Status | Details |
 |------|--------|---------|
 | `fetch-pools` CLI subcommand | ⬜ | `mev-backtest fetch-pools --chain polygon` |
 | V2 registry (≥100 pools) | ⬜ | `pools/polygon_v2.json` |
 | V3 registry (≥100 pools) | ⬜ | `pools/polygon_v3.json` |
-| Curve registry (≥20 pools) | ⬜ | `pools/polygon_curve.json` |
-| Balancer registry (≥20 pools) | ⬜ | `pools/polygon_balancer.json` |
-| Merge all into unified loader | ⬜ | `PoolRegistry::load_all()` reads all four files |
+| Merge all into unified loader | ⬜ | `PoolRegistry::load_all()` reads all files |
 | QuickSwap factory (no code) workaround | ◐ | Factory `0x575737…9a819` has no code on Polygon — need alternate discovery (manual list, alternate factory, or PairCreated event scanning) |
 
 **Depends on**: 5.1.1 + 5.1.2.
@@ -74,32 +68,13 @@ Utility to compute the output of a two-hop path where each hop can be a differen
 
 | Item | Status | Details |
 |------|--------|---------|
-| `quote_path(pool_a, pool_b, amount_in, shared_token) -> Option<u128>` | ⬜ | Dispatches V2→V2, V2→V3, V3→V2, V3→V3, etc. |
+| `quote_path(pool_a, pool_b, amount_in, shared_token) -> Option<u128>` | ⬜ | Dispatches V2→V2, V2→V3, V3→V2, V3→V3 |
 | Reuse existing `check_direction` dispatch | ⬜ | The pattern in `two_hop.rs:80-113` already does this — extract to a standalone fn |
 | Edge case: zero liquidity / full slippage | ⬜ | Return None when any hop reverts |
 
 **Depends on**: nothing new — can be extracted from existing `two_hop.rs` code.
 
-### 5.2.2 Curve quoting
-
-| Item | Status | Details |
-|------|--------|---------|
-| Curve stable-swap invariant `(D, A, n)` | ⬜ | `compute_d()`, `get_y()` from whitepaper |
-| `quote_curve_exact_in(pool, amount_in, i, j) -> Option<u128>` | ⬜ | Fee + admin fee |
-| Curve crypto (v2) quoting | ⬜ | Different invariant (geometric mean + price oracle) |
-
-**Depends on**: 5.2.1 (to integrate into quote_path).
-
-### 5.2.3 Balancer quoting
-
-| Item | Status | Details |
-|------|--------|---------|
-| Weighted pool invariant `Π(token_i^w_i) = const` | ⬜ | `compute_out_given_in()` |
-| `quote_balancer_exact_in(pool, amount_in, token_in, token_out) -> Option<u128>` | ⬜ | Fee + swap fee |
-
-**Depends on**: 5.2.1.
-
-### 5.2.4 Historical USD prices from CSV
+### 5.2.2 Historical USD prices from CSV
 
 | Item | Status | Details |
 |------|--------|---------|
@@ -136,7 +111,7 @@ Utility to compute the output of a two-hop path where each hop can be a differen
 | Known arb block test | ⬜ | Find a real two-hop arb tx on Polygon, verify the detector finds the same opportunity |
 | Gas cost correctness | ⬜ | Compare simulated gas vs actual tx gas used |
 
-**Depends on**: 5.1.3 (pool registry), 5.2.1+ (quoting), 5.2.4 (prices).
+**Depends on**: 5.1.3 (pool registry), 5.2.1+ (quoting), 5.2.2 (prices).
 
 ---
 
@@ -146,14 +121,13 @@ Utility to compute the output of a two-hop path where each hop can be a differen
 
 | Item | Status | Details |
 |------|--------|---------|
-| Auto mode (Balancer→Aave→Uniswap fallback chain) | ⬜ | `FlashLoanWrapper::new_auto()` — tries providers in order |
+| Auto mode (Aave→Uniswap fallback chain) | ⬜ | `FlashLoanWrapper::new_auto()` — tries providers in order |
 | Forced provider (no fallback) | ⬜ | `FlashLoanWrapper::new_forced(provider)` |
 | Borrow / repay interface | ⬜ | `borrow(token, amount) -> Result<()>`, `repay(token, amount) -> Result<()>` |
 | Aave V3 flash loan provider | ⬜ | `0x…` on Polygon, premium calculation |
-| Balancer V2 flash loan provider | ⬜ | Balancer Vault flash loan callback pattern |
 | Uniswap V2/V3 flash swap provider | ⬜ | `swap()` with `amount0Out` / data pattern |
 
-**Depends on**: pool registry (5.1.3) to find Aave/Balancer flash loan contracts.
+**Depends on**: pool registry (5.1.3) to find Aave flash loan contracts.
 
 ### 5.4.2 `TwoHopArbSimulator`
 
@@ -193,9 +167,7 @@ Phase 5.1: Pool Discovery
 
 Phase 5.2: Quoting
   ├── 5.2.1 quote_path() (extract from existing code — quick win)
-  ├── 5.2.2 Curve quoting (new invariant math)
-  ├── 5.2.3 Balancer quoting (new invariant math)
-  └── 5.2.4 Historical prices CSV (independent)
+  └── 5.2.2 Historical prices CSV (independent)
 
 Phase 5.3: Accuracy Tests
   ├── 5.3.1 Reserve sync (validate replay correctness)
@@ -215,13 +187,13 @@ Phase 5.5: Strategy Scaffolds
 ## Quick Wins (can be done in parallel, no dependencies)
 
 - 5.2.1 `quote_path()` — extract dispatch logic from `two_hop.rs` to a standalone public fn.
-- 5.2.4 Historical prices CSV — independent file format + loader.
+- 5.2.2 Historical prices CSV — independent file format + loader.
 - 5.5 Strategy stubs — 4 small fns, structural only.
 
 ## Key Technical Details
 
 - **TheGraph API key**: Use free tier (1000 req/s). Bundle default key or read from env `THEGRAPH_API_KEY`.
 - **Factory abis**: GetPair (V2): `0xe6a43905`, GetPool (V3): `0x1698ee82`.
-- **Flash loan premiums**: Aave V3 = 0.05%, Balancer = 0%, Uniswap V2/V3 = 0% (flash swap).
+- **Flash loan premiums**: Aave V3 = 0.05%, Balancer V2 = 0%, Uniswap flash swap = 0.03%.
 - **Binary search for sim**: Narrow to ±0.1% in ≤10 iterations. Use revm `transact()` return value for exact output.
 - **CSV price format**: Date as unix timestamp or `YYYY-MM-DD`, token as lowercase hex with `0x` prefix.

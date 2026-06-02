@@ -309,4 +309,5 @@ pub enum Command {
     Report,
     Config,
     Replay,
+    GenerateRegistry,
 }

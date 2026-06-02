@@ -22,12 +22,8 @@ pub struct MevOpportunity {
     pub input_amount: U256,
     /// Expected profit in token_out (gross, before gas)
     pub expected_profit: U256,
-    /// Expected profit in USD (estimated)
-    pub expected_profit_usd: f64,
-    /// Estimated gas cost in USD
-    pub gas_cost_usd: f64,
-    /// Net profit after gas
-    pub net_profit_usd: f64,
+    /// Estimated gas cost in wei
+    pub gas_cost_wei: u128,
     /// Timestamp of the block
     pub timestamp: u64,
 }

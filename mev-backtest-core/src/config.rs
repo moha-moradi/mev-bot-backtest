@@ -45,30 +45,14 @@ pub struct Config {
     // Gas model
     #[serde(default = "default_gas_model")]
     pub gas_model: String,
-    #[serde(default = "default_priority_fee")]
-    pub priority_fee: f64,
-    #[serde(default = "default_coinbase_bribe")]
-    pub coinbase_bribe: u8,
 
     // Output
-    #[serde(default)]
-    pub min_profit_usd: f64,
     #[serde(default = "default_output_format")]
     pub output: String,
     #[serde(default = "default_export_path")]
     pub export_path: String,
     #[serde(default = "default_cache_dir")]
     pub cache_dir: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parallelism: Option<u64>,
-
-    /// Fast mode: skip token address widening in tx filter
-    #[serde(default)]
-    pub fast_mode: bool,
-
-    /// Gas limit for arb transaction cost estimation
-    #[serde(default = "default_gas_limit")]
-    pub gas_limit: u64,
 
     // Block range (not serialized to TOML directly, handled via CLI merge)
     #[serde(skip)]
@@ -107,14 +91,6 @@ fn default_gas_model() -> String {
     "historical_exact".to_string()
 }
 
-fn default_priority_fee() -> f64 {
-    1.0
-}
-
-fn default_coinbase_bribe() -> u8 {
-    10
-}
-
 fn default_output_format() -> String {
     "table".to_string()
 }
@@ -127,10 +103,6 @@ fn default_cache_dir() -> String {
     "./cache".to_string()
 }
 
-fn default_gas_limit() -> u64 {
-    200_000
-}
-
 impl Default for Config {
     fn default() -> Self {
         Config {
@@ -139,15 +111,9 @@ impl Default for Config {
             flash_loan_provider: default_flash_loan_provider(),
             strategies: default_strategies(),
             gas_model: default_gas_model(),
-            priority_fee: default_priority_fee(),
-            coinbase_bribe: default_coinbase_bribe(),
-            min_profit_usd: 0.0,
             output: default_output_format(),
             export_path: default_export_path(),
             cache_dir: default_cache_dir(),
-            parallelism: None,
-            fast_mode: false,
-            gas_limit: default_gas_limit(),
             days: None,
             blocks: None,
             block: None,
@@ -331,8 +297,7 @@ RPC:             {}
 Block range:     {} → {}
 Strategies:      {}
 Flash loan:      {}
-Gas model:       {} (+{:.1} gwei)
-Coinbase bribe:  {}%
+Gas model:       {}
 Cache dir:       {}
 "#,
             chain_name,
@@ -343,8 +308,6 @@ Cache dir:       {}
             strat_list,
             provider_desc,
             self.gas_model,
-            self.priority_fee,
-            self.coinbase_bribe,
             self.cache_dir,
         )
     }
@@ -362,15 +325,9 @@ pub struct CliOverrides {
     pub flash_loan_provider: Option<String>,
     pub strategies: Option<String>,
     pub gas_model: Option<String>,
-    pub priority_fee: Option<f64>,
-    pub coinbase_bribe: Option<u8>,
-    pub min_profit_usd: Option<f64>,
     pub output: Option<String>,
     pub export_path: Option<String>,
     pub cache_dir: Option<String>,
-    pub parallelism: Option<u64>,
-    pub fast_mode: Option<bool>,
-    pub gas_limit: Option<u64>,
 }
 
 impl Config {
@@ -405,15 +362,6 @@ impl Config {
         if let Some(v) = &overrides.gas_model {
             self.gas_model = v.clone();
         }
-        if let Some(v) = &overrides.priority_fee {
-            self.priority_fee = *v;
-        }
-        if let Some(v) = &overrides.coinbase_bribe {
-            self.coinbase_bribe = *v;
-        }
-        if let Some(v) = &overrides.min_profit_usd {
-            self.min_profit_usd = *v;
-        }
         if let Some(v) = &overrides.output {
             self.output = v.clone();
         }
@@ -422,15 +370,6 @@ impl Config {
         }
         if let Some(v) = &overrides.cache_dir {
             self.cache_dir = v.clone();
-        }
-        if let Some(v) = &overrides.parallelism {
-            self.parallelism = Some(*v);
-        }
-        if let Some(v) = &overrides.fast_mode {
-            self.fast_mode = *v;
-        }
-        if let Some(v) = &overrides.gas_limit {
-            self.gas_limit = *v;
         }
     }
 }

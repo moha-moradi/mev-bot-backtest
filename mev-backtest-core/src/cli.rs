@@ -37,6 +37,10 @@ pub enum Command {
 
     /// Replay a specific block for debugging (not yet implemented)
     Replay(ReplayArgs),
+
+    /// Generate a pool registry JSON using TheGraph or on-chain discovery
+    #[command(name = "generate-registry")]
+    GenerateRegistry(GenerateRegistryArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -95,18 +99,6 @@ pub struct RunArgs {
     #[arg(long, default_value = "historical_exact", value_name = "MODEL", help_heading = "Gas Model")]
     pub gas_model: String,
 
-    /// Premium added in historical_exact mode (gwei)
-    #[arg(long, default_value_t = 1.0, value_name = "GWEI", help_heading = "Gas Model")]
-    pub priority_fee: f64,
-
-    /// Percentage of gross profit as validator tip (0–100)
-    #[arg(long, default_value_t = 10, value_name = "PERCENT", help_heading = "Gas Model")]
-    pub coinbase_bribe: u8,
-
-    /// Minimum profit threshold in USD for verbose output
-    #[arg(long, default_value_t = 0.0, value_name = "USD", help_heading = "Output")]
-    pub min_profit_usd: f64,
-
     /// Output format: table, csv, json
     #[arg(long, default_value = "table", value_name = "FORMAT", help_heading = "Output")]
     pub output: String,
@@ -118,18 +110,6 @@ pub struct RunArgs {
     /// Block/state cache directory
     #[arg(long, default_value = "./cache", value_name = "PATH", help_heading = "Output")]
     pub cache_dir: String,
-
-    /// Concurrent block workers (default: CPU core count)
-    #[arg(long, value_name = "N", help_heading = "Output")]
-    pub parallelism: Option<u64>,
-
-    /// Fast mode: skip token address widening in tx filter (faster, less accurate)
-    #[arg(long, help_heading = "Output")]
-    pub fast_mode: bool,
-
-    /// Gas limit for arb transaction cost estimation (default: 200000)
-    #[arg(long, default_value_t = 200_000, value_name = "GAS", help_heading = "Gas Model")]
-    pub gas_limit: u64,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -139,10 +119,53 @@ pub struct FetchArgs {
 
     #[command(flatten)]
     pub chain_args: ChainArgs,
+}
 
-    /// Concurrent block workers (default: CPU core count)
-    #[arg(long, value_name = "N")]
-    pub parallelism: Option<u64>,
+#[derive(Args, Debug, Clone)]
+pub struct GenerateRegistryArgs {
+    /// Chain name: polygon, avalanche, bsc, arbitrum, base, ethereum, optimism
+    #[arg(short = 'n', long, default_value = "polygon", value_name = "NAME")]
+    pub chain: String,
+
+    /// Output path for the registry JSON file
+    #[arg(short = 'o', long = "output", default_value = "./pools/{chain}.json", value_name = "PATH")]
+    pub output: String,
+
+    /// Source: "thegraph" or "onchain" (default: thegraph)
+    #[arg(long, default_value = "thegraph", value_name = "SOURCE")]
+    pub source: String,
+
+    /// TheGraph API key (required for thegraph source)
+    #[arg(long, env = "THEGRAPH_API_KEY", value_name = "KEY")]
+    pub graph_api_key: Option<String>,
+
+    /// Include V2 pools
+    #[arg(long, default_value_t = true)]
+    pub v2: bool,
+
+    /// Include V3 pools
+    #[arg(long, default_value_t = true)]
+    pub v3: bool,
+
+    /// Override TheGraph V2 subgraph URL template
+    #[arg(long, value_name = "URL")]
+    pub graph_v2_url: Option<String>,
+
+    /// Override TheGraph V3 subgraph URL template
+    #[arg(long, value_name = "URL")]
+    pub graph_v3_url: Option<String>,
+
+    /// RPC URL for on-chain discovery
+    #[arg(long, value_name = "URL")]
+    pub rpc_url: Option<String>,
+
+    /// From block for on-chain discovery
+    #[arg(long, default_value_t = 0, value_name = "NUMBER")]
+    pub from_block: u64,
+
+    /// To block for on-chain discovery (default: latest)
+    #[arg(long, value_name = "NUMBER")]
+    pub to_block: Option<u64>,
 }
 
 #[derive(Args, Debug, Clone)]

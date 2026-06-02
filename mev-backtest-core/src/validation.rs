@@ -12,8 +12,6 @@ pub struct ValidationResult {
     pub range_mode: RangeMode,
     pub strategies: Vec<Strategy>,
     pub flash_loan_provider: FlashLoanProvider,
-    pub parallelism: usize,
-    pub fast_mode: bool,
 }
 
 #[derive(Debug)]
@@ -285,34 +283,7 @@ pub fn validate_and_resolve_for(config: &Config, check_strategies: bool) -> Resu
     // 5. Validate block range
     let range_mode = check_range_conflicts(config)?;
 
-    // 6. Validate parallelism
-    let parallelism = match config.parallelism {
-        Some(n) if n < 1 => {
-            return Err(ValidationError::Message(
-                "Error: --parallelism must be >= 1.".to_string(),
-            ));
-        }
-        Some(n) => n as usize,
-        None => std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4),
-    };
-
-    // 7. Validate coinbase bribe
-    if config.coinbase_bribe > 100 {
-        return Err(ValidationError::Message(
-            "Error: --coinbase-bribe must be between 0 and 100.".to_string(),
-        ));
-    }
-
-    // 8. Validate priority fee
-    if config.priority_fee < 0.0 {
-        return Err(ValidationError::Message(
-            "Error: --priority-fee must be >= 0.".to_string(),
-        ));
-    }
-
-    // 9. Validate RPC URL
+    // 6. Validate RPC URL
     if let Some(url) = &config.rpc_url {
         if url.trim().is_empty() {
             return Err(ValidationError::Message(
@@ -328,12 +299,12 @@ pub fn validate_and_resolve_for(config: &Config, check_strategies: bool) -> Resu
         }
     }
 
-    // 10. Validate gas model
+    // 7. Validate gas model
     let _gas_model: GasModel = config.gas_model.parse().map_err(|e: String| {
         ValidationError::Message(format!("Error: {e}"))
     })?;
 
-    // 11. Validate output format
+    // 8. Validate output format
     let _output: OutputFormat = config.output.parse().map_err(|e: String| {
         ValidationError::Message(format!("Error: {e}"))
     })?;
@@ -344,7 +315,5 @@ pub fn validate_and_resolve_for(config: &Config, check_strategies: bool) -> Resu
         range_mode,
         strategies,
         flash_loan_provider: provider,
-        parallelism,
-        fast_mode: config.fast_mode,
     })
 }

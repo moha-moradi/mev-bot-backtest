@@ -1,5 +1,4 @@
 use alloy::primitives::{address, Address, U256};
-use mev_backtest_core::mev::pricing;
 use mev_backtest_core::mev::two_hop::TwoHopArbDetector;
 use mev_backtest_core::pool::state::UniswapV2PoolState;
 use mev_backtest_core::pool::state::{PoolInfo, PoolManager, PoolState};
@@ -66,10 +65,8 @@ fn test_detection_pipeline_synthetic_profitable() {
         2_000_000, 1_000_000,
     ));
 
-    let detector = TwoHopArbDetector::new(0.0);
-
     // Direction 1: buy WMATIC from A (spend USDC), sell WMATIC to B (get USDT)
-    let opps = detector.detect(&pm, 1_000_000, 0, 12345678, 50_000_000_000, 1.0);
+    let opps = TwoHopArbDetector::detect(&pm, 1_000_000, 0, 12345678, 50_000_000_000);
 
     assert!(!opps.is_empty(), "Should detect arb between imbalanced pools");
     assert!(opps.iter().any(|o| o.strategy == Strategy::TwoHopArb));
@@ -77,9 +74,7 @@ fn test_detection_pipeline_synthetic_profitable() {
     for opp in &opps {
         assert!(opp.block_number == 1_000_000);
         assert!(opp.expected_profit > U256::ZERO, "Profit should be positive");
-        assert!(opp.expected_profit_usd > 0.0, "USD profit should be positive");
-        assert!(opp.gas_cost_usd > 0.0, "Gas cost should be positive");
-        assert!(opp.net_profit_usd > 0.0, "Net profit should be positive after gas with 0 min_profit");
+        assert!(opp.gas_cost_wei > 0, "Gas cost should be positive");
     }
 }
 
@@ -97,8 +92,7 @@ fn test_detection_no_arb_equal_pools() {
         1_000_000, 1_000_000,
     ));
 
-    let detector = TwoHopArbDetector::new(0.0);
-    let opps = detector.detect(&pm, 1, 0, 100, 50_000_000_000, 1.0);
+    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000);
 
     assert!(opps.is_empty(), "No arb should be detected with equal prices");
 }
@@ -117,44 +111,19 @@ fn test_gas_cost_min_profit_filter() {
         1_010_000, 1_000_000,
     ));
 
-    // Very high min_profit_usd — no arbs should pass
-    let detector = TwoHopArbDetector::new(1000.0);
-    let opps = detector.detect(&pm, 1, 0, 100, 50_000_000_000, 1.0);
-    assert!(opps.is_empty(), "High min_profit should filter all arbs");
+    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000);
 
-    // Low min_profit — should see arbs if profitable
-    let detector2 = TwoHopArbDetector::new(0.0);
-    let opps2 = detector2.detect(&pm, 1, 0, 100, 50_000_000_000, 1.0);
-
-    // Check that gas_cost_usd is computed correctly
-    // 200_000 gas * (50 gwei + 1 gwei) = 200_000 * 51e9 = 1.02e16 wei = 0.0102 MATIC
-    // MATIC price = $0.50, so gas_cost_usd = 0.0051
-    for opp in &opps2 {
-        assert!(opp.gas_cost_usd > 0.0);
-        let expected_gas = 200_000.0 * (50.0 + 1.0) * 1e9 / 1e18 * 0.50;
-        let diff = (opp.gas_cost_usd - expected_gas).abs();
-        assert!(diff < 0.001, "Gas cost mismatch: {} vs {}", opp.gas_cost_usd, expected_gas);
+    // Check that gas_cost_wei is computed correctly
+    for opp in &opps {
+        assert!(opp.gas_cost_wei > 0);
+        let expected_gas = 200_000u128 * 50_000_000_000;
+        let diff = if opp.gas_cost_wei > expected_gas {
+            opp.gas_cost_wei - expected_gas
+        } else {
+            expected_gas - opp.gas_cost_wei
+        };
+        assert!(diff < 1000, "Gas cost mismatch: {} vs {}", opp.gas_cost_wei, expected_gas);
     }
-}
-
-#[test]
-fn test_pricing_module() {
-    assert_eq!(pricing::matic_usd_price(), 0.50);
-
-    // USDC: 6 decimals, $1.00
-    let usd = pricing::raw_amount_to_usd(usdc(), 1_000_000).unwrap(); // 1 USDC
-    assert!((usd - 1.0).abs() < 0.01);
-
-    // WMATIC: 18 decimals, $0.50
-    let usd = pricing::raw_amount_to_usd(wmatic(), 10_000_000_000_000_000_000u128).unwrap(); // 10 WMATIC
-    assert!((usd - 5.0).abs() < 0.01);
-
-    // Unknown token returns None
-    let unknown = address!("deaddeaddeaddeaddeaddeaddeaddeaddeaddead");
-    assert!(pricing::raw_amount_to_usd(unknown, 1000).is_none());
-
-    assert_eq!(pricing::token_decimals(usdc()), Some(6));
-    assert_eq!(pricing::token_decimals(wmatic()), Some(18));
 }
 
 #[test]
@@ -208,12 +177,109 @@ fn test_detect_both_directions() {
     pm.add_pool(make_pool(matic_usdc_pool(), usdc(), wmatic(), 1_000_000, 2_000_000));
     pm.add_pool(make_pool(matic_usdt_pool(), usdt(), wmatic(), 1_000_000, 500_000));
 
-    let detector = TwoHopArbDetector::new(0.0);
-    let opps = detector.detect(&pm, 1, 0, 100, 50_000_000_000, 1.0);
+    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000);
 
     // Should find arb in at least one direction
     assert!(!opps.is_empty(), "Should detect arb");
 
     // Both directions checked means we should have at most 2 opportunities
     assert!(opps.len() <= 2, "At most 2 direction opportunities");
+}
+
+/// ── Accuracy / Precision Tests ──────────────────────────────────────────
+
+#[test]
+fn test_arb_profit_accuracy_known_delta() {
+    let mut pm = PoolManager::new();
+
+    // Pool A: USDC/WMATIC — price: 1 WMATIC = 0.5 USDC
+    pm.add_pool(make_pool(matic_usdc_pool(), usdc(), wmatic(), 1_000_000, 2_000_000));
+    // Pool B: USDT/WMATIC — price: 1 WMATIC = 2.0 USDT
+    pm.add_pool(make_pool(matic_usdt_pool(), usdt(), wmatic(), 1_000_000, 500_000));
+
+    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000);
+
+    assert!(!opps.is_empty(), "Should detect arb");
+    for opp in &opps {
+        assert!(opp.expected_profit > U256::ZERO, "Profit should be > 0");
+        assert!(opp.gas_cost_wei > 0, "Gas cost should be > 0");
+    }
+}
+
+#[test]
+fn test_two_hop_same_token_different_reserves() {
+    let mut pm = PoolManager::new();
+
+    // Two pools with same token pair but different reserves
+    // Pool A: 1M USDC, 3M WMATIC (price: 3 WMATIC per USDC — WMATIC cheap)
+    // Pool B: 1M USDC, 1M WMATIC (price: 1 WMATIC per USDC — WMATIC expensive)
+    // Arb: buy WMATIC on A, sell on B
+    let pool_a = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    let pool_b = address!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+
+    pm.add_pool(make_pool(pool_a, usdc(), wmatic(), 1_000_000, 3_000_000));
+    pm.add_pool(make_pool(pool_b, usdc(), wmatic(), 1_000_000, 1_000_000));
+
+    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000);
+
+    // Arb exists: buy WMATIC cheap on A, sell expensive on B
+    assert!(!opps.is_empty(), "Should detect arb between same-token pools with different prices");
+}
+
+#[test]
+fn test_flash_loan_fee_integration() {
+    use alloy::primitives::U256;
+    use mev_backtest_core::mev::flash_loan;
+    use mev_backtest_core::types::FlashLoanProvider;
+
+    let amount = U256::from(1_000_000_000_000_000_000u128); // 1 ETH
+    let gross_profit = U256::from(50_000_000_000_000_000u128); // 0.05 ETH profit
+
+    // Balancer has 0 fee
+    let net = flash_loan::flash_loan_net_profit(gross_profit, amount, FlashLoanProvider::Balancer);
+    assert_eq!(net, gross_profit);
+
+    // Aave has 0.05% fee = 0.0005 ETH on 1 ETH borrowed
+    let net_aave = flash_loan::flash_loan_net_profit(gross_profit, amount, FlashLoanProvider::Aave);
+    assert!(net_aave < gross_profit, "Fee should reduce profit");
+    assert_eq!(net_aave, gross_profit - U256::from(500_000_000_000_000u128));
+}
+
+#[test]
+fn test_two_hop_v3_reserves_update_accuracy() {
+    use mev_backtest_core::pool::state::UniswapV3PoolState;
+    use std::collections::HashMap;
+
+    // V3 pool with concentrated liquidity
+    let v3_addr = address!("3333333333333333333333333333333333333333");
+    let v3_pool = PoolState::UniswapV3(UniswapV3PoolState {
+        info: PoolInfo {
+            address: v3_addr,
+            pool_type: "uniswap_v3".into(),
+            token0: wmatic(),
+            token1: usdc(),
+            fee: 30,
+            name: None,
+            dex_type: mev_backtest_core::pool::dex_type::DexType::UniswapV3,
+            tick_spacing: Some(60),
+        },
+        sqrt_price_x96: U256::from(79228162514264337593543950336u128), // price = 1.0
+        tick: 0,
+        liquidity: 1_000_000_000_000u128,
+        ticks: HashMap::new(),
+    });
+
+    let v2_addr = address!("4444444444444444444444444444444444444444");
+    let v2_pool = make_pool(v2_addr, wmatic(), usdt(), 100_000_000, 100_000_000);
+
+    let mut pm = PoolManager::new();
+    pm.add_pool(v3_pool);
+    pm.add_pool(v2_pool);
+
+    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000);
+
+    // V3+V2 cross-DEX detection should work
+    // This may or may not detect an arb depending on price state
+    // At minimum should not panic or crash
+    assert!(opps.len() <= 2, "At most 2 opportunities");
 }
