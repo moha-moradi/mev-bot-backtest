@@ -284,4 +284,127 @@ impl FromStr for OutputFormat {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chain_name_roundtrip() {
+        for chain in ChainName::all() {
+            let s = chain.to_string();
+            let parsed: ChainName = s.parse().unwrap();
+            assert_eq!(*chain, parsed);
+        }
+    }
+
+    #[test]
+    fn test_chain_name_unknown() {
+        let err = "unknown".parse::<ChainName>().unwrap_err();
+        assert!(err.contains("unknown chain"));
+    }
+
+    #[test]
+    fn test_chain_name_chain_id() {
+        assert_eq!(ChainName::Polygon.chain_id(), 137);
+        assert_eq!(ChainName::Ethereum.chain_id(), 1);
+    }
+
+    #[test]
+    fn test_flash_loan_roundtrip() {
+        for (p, s) in &[
+            (FlashLoanProvider::Auto, "auto"),
+            (FlashLoanProvider::Balancer, "balancer"),
+            (FlashLoanProvider::Aave, "aave"),
+            (FlashLoanProvider::Uniswap, "uniswap"),
+        ] {
+            assert_eq!(p.to_string(), *s);
+            assert_eq!(s.parse::<FlashLoanProvider>().unwrap(), *p);
+        }
+    }
+
+    #[test]
+    fn test_flash_loan_is_forced() {
+        assert!(!FlashLoanProvider::Auto.is_forced());
+        assert!(FlashLoanProvider::Balancer.is_forced());
+        assert!(FlashLoanProvider::Aave.is_forced());
+        assert!(FlashLoanProvider::Uniswap.is_forced());
+    }
+
+    #[test]
+    fn test_flash_loan_priority_list() {
+        assert_eq!(FlashLoanProvider::priority_list(true).len(), 3);
+        assert!(FlashLoanProvider::priority_list(false).is_empty());
+    }
+
+    #[test]
+    fn test_strategy_roundtrip() {
+        assert_eq!(Strategy::TwoHopArb.to_string(), "two_hop_arb");
+        assert_eq!("two_hop_arb".parse::<Strategy>().unwrap(), Strategy::TwoHopArb);
+    }
+
+    #[test]
+    fn test_strategy_unknown() {
+        assert!("sandwich".parse::<Strategy>().unwrap_err().contains("unknown strategy"));
+    }
+
+    #[test]
+    fn test_strategy_from_comma_list_single() {
+        let v = Strategy::from_comma_list("two_hop_arb").unwrap();
+        assert_eq!(v, vec![Strategy::TwoHopArb]);
+    }
+
+    #[test]
+    fn test_strategy_from_comma_list_all() {
+        let v = Strategy::from_comma_list("all").unwrap();
+        assert_eq!(v, Strategy::all());
+    }
+
+    #[test]
+    fn test_strategy_all_static() {
+        assert_eq!(Strategy::all(), &[Strategy::TwoHopArb]);
+    }
+
+    #[test]
+    fn test_range_mode_display() {
+        assert_eq!(RangeMode::Days(7).to_string(), "last 7 days");
+        assert_eq!(RangeMode::Blocks(100).to_string(), "last 100 blocks");
+        assert_eq!(RangeMode::Single(42).to_string(), "single block #42");
+        assert_eq!(RangeMode::Range(10, 20).to_string(), "blocks 10–20 (11 blocks)");
+    }
+
+    #[test]
+    fn test_range_mode_resolve_description() {
+        assert!(RangeMode::Days(1).resolve_description().contains("binary search"));
+        assert!(RangeMode::Blocks(1).resolve_description().contains("chain tip"));
+        assert_eq!(RangeMode::Single(5).resolve_description(), "single block mode");
+        assert!(RangeMode::Range(1, 10).resolve_description().contains("blocks 1–10"));
+    }
+
+    #[test]
+    fn test_gas_model_roundtrip() {
+        for m in &[GasModel::HistoricalExact, GasModel::P90, GasModel::Fixed] {
+            let s = m.to_string();
+            assert_eq!(s.parse::<GasModel>().unwrap(), *m);
+        }
+    }
+
+    #[test]
+    fn test_gas_model_unknown() {
+        assert!("foo".parse::<GasModel>().unwrap_err().contains("unknown gas model"));
+    }
+
+    #[test]
+    fn test_output_format_roundtrip() {
+        for f in &[OutputFormat::Table, OutputFormat::Csv, OutputFormat::Json] {
+            let s = f.to_string();
+            assert_eq!(s.parse::<OutputFormat>().unwrap(), *f);
+        }
+    }
+
+    #[test]
+    fn test_output_format_unknown() {
+        assert!("xml".parse::<OutputFormat>().unwrap_err().contains("unknown output format"));
+    }
+}
+
 

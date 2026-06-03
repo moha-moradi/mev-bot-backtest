@@ -373,3 +373,138 @@ impl Config {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{RangeMode, Strategy, FlashLoanProvider, ChainName};
+
+    #[test]
+    fn test_default_chain_is_polygon() {
+        let cfg = Config::default();
+        assert_eq!(cfg.chain, "polygon");
+    }
+
+    #[test]
+    fn test_default_has_seven_chains() {
+        let cfg = Config::default();
+        assert!(cfg.chains.contains_key("polygon"));
+        assert!(cfg.chains.contains_key("ethereum"));
+        assert!(cfg.chains.contains_key("bsc"));
+        assert!(cfg.chains.contains_key("arbitrum"));
+        assert!(cfg.chains.contains_key("avalanche"));
+        assert!(cfg.chains.contains_key("base"));
+        assert!(cfg.chains.contains_key("optimism"));
+        assert_eq!(cfg.chains.len(), 7);
+    }
+
+    #[test]
+    fn test_effective_rpc_url_uses_override() {
+        let mut cfg = Config::default();
+        cfg.rpc_url = Some("https://my-rpc.example.com".into());
+        assert_eq!(cfg.effective_rpc_url(ChainName::Polygon), "https://my-rpc.example.com");
+    }
+
+    #[test]
+    fn test_effective_rpc_url_falls_back_to_public() {
+        let cfg = Config::default();
+        assert!(cfg.effective_rpc_url(ChainName::Polygon).contains("publicnode.com"));
+    }
+
+    #[test]
+    fn test_load_or_default_missing_file() {
+        let cfg = Config::load_or_default("/nonexistent/path/mev-backtest.toml");
+        assert_eq!(cfg.chain, "polygon");
+    }
+
+    #[test]
+    fn test_load_valid_toml() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_mev_config_valid.toml");
+        std::fs::write(&path, r#"chain = "ethereum"
+rpc_url = "https://eth.diy"
+"#).unwrap();
+        let cfg = Config::load(path.to_str().unwrap()).unwrap();
+        assert_eq!(cfg.chain, "ethereum");
+        assert_eq!(cfg.rpc_url.unwrap(), "https://eth.diy");
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_load_invalid_toml_errors() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_mev_config_invalid.toml");
+        std::fs::write(&path, "not [[ valid toml [[[").unwrap();
+        assert!(Config::load(path.to_str().unwrap()).is_err());
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_config_to_toml_roundtrip() {
+        let cfg = Config::default();
+        let toml_str = cfg.to_toml_string().unwrap();
+        assert!(toml_str.contains("chain"));
+        assert!(toml_str.contains("polygon"));
+    }
+
+    #[test]
+    fn test_merge_cli_full_override() {
+        let mut cfg = Config::default();
+        let overrides = CliOverrides {
+            days: Some(14), blocks: None, block: None,
+            from_block: None, to_block: None,
+            chain: Some("ethereum".into()),
+            rpc_url: Some("https://custom".into()),
+            flash_loan_provider: Some("aave".into()),
+            strategies: Some("two_hop_arb".into()),
+            gas_model: Some("fixed".into()),
+            output: Some("json".into()),
+            export_path: Some("./out".into()),
+            cache_dir: Some("./db".into()),
+        };
+        cfg.merge_cli(&overrides);
+        assert_eq!(cfg.days, Some(14));
+        assert_eq!(cfg.chain, "ethereum");
+        assert_eq!(cfg.rpc_url.unwrap(), "https://custom");
+        assert_eq!(cfg.flash_loan_provider, "aave");
+        assert_eq!(cfg.strategies, "two_hop_arb");
+        assert_eq!(cfg.gas_model, "fixed");
+        assert_eq!(cfg.output, "json");
+        assert_eq!(cfg.export_path, "./out");
+        assert_eq!(cfg.cache_dir, "./db");
+    }
+
+    #[test]
+    fn test_merge_cli_partial_override() {
+        let mut cfg = Config::default();
+        let overrides = CliOverrides {
+            days: Some(7),
+            blocks: None, block: None, from_block: None, to_block: None,
+            chain: None, rpc_url: None,
+            flash_loan_provider: None, strategies: None,
+            gas_model: None, output: None, export_path: None, cache_dir: None,
+        };
+        cfg.merge_cli(&overrides);
+        assert_eq!(cfg.days, Some(7));
+        assert_eq!(cfg.chain, "polygon");
+    }
+
+    #[test]
+    fn test_plan_summary_contains_all_sections() {
+        let cfg = Config::default();
+        let chain_cfg = cfg.chains.get("polygon").unwrap();
+        let range = RangeMode::Single(50000000);
+        let strategies = vec![Strategy::TwoHopArb];
+        let summary = cfg.plan_summary(
+            ChainName::Polygon, chain_cfg, &range, &strategies,
+            FlashLoanProvider::Auto,
+        );
+        assert!(summary.contains("Chain:"));
+        assert!(summary.contains("polygon"));
+        assert!(summary.contains("RPC:"));
+        assert!(summary.contains("single block #50000000"));
+        assert!(summary.contains("two_hop_arb"));
+        assert!(summary.contains("Flash loan:"));
+        assert!(summary.contains("auto (Balancer"));
+    }
+}

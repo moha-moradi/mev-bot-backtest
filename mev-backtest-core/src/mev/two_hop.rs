@@ -198,3 +198,188 @@ fn v2_reserves(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::{address, Address, U256};
+    use crate::pool::state::{PoolInfo, UniswapV3PoolState};
+    use crate::pool::dex_type::DexType;
+    use std::collections::HashMap;
+
+    fn wmatic() -> Address { address!("0d500b1d8e8ef31e21c99d1db9a6444d3adf1270") }
+    fn usdc() -> Address { address!("2791bca1f2de4661ed88a30c99a7a9449aa84174") }
+    fn usdt() -> Address { address!("c2132d05d31c914a87c6611c10748aeb04b58e8f") }
+
+    fn v2_pool(addr: Address, t0: Address, t1: Address, r0: u128, r1: u128) -> PoolState {
+        PoolState::UniswapV2(UniswapV2PoolState {
+            info: PoolInfo {
+                address: addr, pool_type: "uniswap_v2".into(),
+                token0: t0, token1: t1, fee: 30,
+                name: None, dex_type: DexType::UniswapV2, tick_spacing: None,
+            },
+            reserve0: r0, reserve1: r1,
+        })
+    }
+
+    fn v3_pool(addr: Address, t0: Address, t1: Address, sqrt: U256, tick: i32, liq: u128) -> PoolState {
+        PoolState::UniswapV3(UniswapV3PoolState {
+            info: PoolInfo {
+                address: addr, pool_type: "uniswap_v3".into(),
+                token0: t0, token1: t1, fee: 30,
+                name: None, dex_type: DexType::UniswapV3, tick_spacing: Some(60),
+            },
+            sqrt_price_x96: sqrt, tick, liquidity: liq,
+            ticks: HashMap::new(),
+        })
+    }
+
+    // ---- arb_tokens ----
+
+    #[test]
+    fn test_arb_tokens_shared_token0_of_a_token1_of_b() {
+        let a = v2_pool(address!("1111111111111111111111111111111111111111"), usdc(), wmatic(), 1, 1);
+        let b = v2_pool(address!("2222222222222222222222222222222222222222"), wmatic(), usdt(), 1, 1);
+        let (token_in, token_out) = arb_tokens(&a, &b, wmatic()).unwrap();
+        assert_eq!(token_in, usdc());
+        assert_eq!(token_out, usdt());
+    }
+
+    #[test]
+    fn test_arb_tokens_shared_token1_of_a_token0_of_b() {
+        let a = v2_pool(address!("1111111111111111111111111111111111111111"), wmatic(), usdc(), 1, 1);
+        let b = v2_pool(address!("2222222222222222222222222222222222222222"), usdt(), wmatic(), 1, 1);
+        let (token_in, token_out) = arb_tokens(&a, &b, wmatic()).unwrap();
+        assert_eq!(token_in, usdc());
+        assert_eq!(token_out, usdt());
+    }
+
+    #[test]
+    fn test_arb_tokens_no_shared_token_returns_none() {
+        let a = v2_pool(address!("1111111111111111111111111111111111111111"), usdc(), usdt(), 1, 1);
+        let b = v2_pool(address!("2222222222222222222222222222222222222222"), wmatic(), usdc(), 1, 1);
+        assert!(arb_tokens(&a, &b, wmatic()).is_none());
+    }
+
+    // ---- v2_reserves ----
+
+    #[test]
+    fn test_v2_reserves_buy_side_token0_is_shared() {
+        let pool = UniswapV2PoolState {
+            info: PoolInfo {
+                address: address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                pool_type: "uniswap_v2".into(),
+                token0: usdc(), token1: wmatic(), fee: 30,
+                name: None, dex_type: DexType::UniswapV2, tick_spacing: None,
+            },
+            reserve0: 1_000_000, reserve1: 2_000_000,
+        };
+        let (other, shared, fee) = v2_reserves(&pool, wmatic(), true).unwrap();
+        assert_eq!(other, 1_000_000);
+        assert_eq!(shared, 2_000_000);
+        assert_eq!(fee, 30);
+    }
+
+    #[test]
+    fn test_v2_reserves_sell_side_token0_is_shared() {
+        let pool = UniswapV2PoolState {
+            info: PoolInfo {
+                address: address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                pool_type: "uniswap_v2".into(),
+                token0: wmatic(), token1: usdt(), fee: 30,
+                name: None, dex_type: DexType::UniswapV2, tick_spacing: None,
+            },
+            reserve0: 2_000_000, reserve1: 1_000_000,
+        };
+        let (shared, other, fee) = v2_reserves(&pool, wmatic(), false).unwrap();
+        assert_eq!(shared, 2_000_000);
+        assert_eq!(other, 1_000_000);
+        assert_eq!(fee, 30);
+    }
+
+    // ---- quote_path ----
+
+    #[test]
+    fn test_quote_path_v2_v2_profitable() {
+        let a = v2_pool(address!("1111111111111111111111111111111111111111"), usdc(), wmatic(), 1_000_000, 2_000_000);
+        let b = v2_pool(address!("2222222222222222222222222222222222222222"), wmatic(), usdt(), 1_000_000, 2_000_000);
+        let result = quote_path(&a, &b, wmatic());
+        assert!(result.is_some());
+        assert!(result.unwrap().profit > 0);
+    }
+
+    #[test]
+    fn test_quote_path_v2_v2_no_profit_equal_prices() {
+        let a = v2_pool(address!("1111111111111111111111111111111111111111"), usdc(), wmatic(), 1_000_000, 1_000_000);
+        let b = v2_pool(address!("2222222222222222222222222222222222222222"), wmatic(), usdt(), 1_000_000, 1_000_000);
+        assert!(quote_path(&a, &b, wmatic()).is_none());
+    }
+
+    #[test]
+    fn test_quote_path_v2_v2_below_min_reserve() {
+        let a = v2_pool(address!("1111111111111111111111111111111111111111"), usdc(), wmatic(), 500, 500);
+        let b = v2_pool(address!("2222222222222222222222222222222222222222"), wmatic(), usdt(), 500, 500);
+        assert!(quote_path(&a, &b, wmatic()).is_none());
+    }
+
+    #[test]
+    fn test_quote_path_v3_v3_no_panic() {
+        let a = v3_pool(address!("3333333333333333333333333333333333333333"), usdc(), wmatic(), U256::from(1u128 << 96), 0, 1_000_000_000);
+        let b = v3_pool(address!("4444444444444444444444444444444444444444"), wmatic(), usdt(), U256::from(2u128 << 96), 10, 1_000_000_000);
+        let result = quote_path(&a, &b, wmatic());
+        assert!(result.is_none() || result.unwrap().profit > 0);
+    }
+
+    #[test]
+    fn test_quote_path_v2_v3_mixed() {
+        let v2 = v2_pool(address!("1111111111111111111111111111111111111111"), usdc(), wmatic(), 1_000_000, 1_000_000);
+        let v3 = v3_pool(address!("3333333333333333333333333333333333333333"), wmatic(), usdt(), U256::from(1u128 << 96), 0, 1_000_000_000);
+        let result = quote_path(&v2, &v3, wmatic());
+        assert!(result.is_none() || result.unwrap().profit > 0);
+    }
+
+    #[test]
+    fn test_quote_path_unsupported_types_returns_none() {
+        let curve = PoolState::Curve(crate::pool::state::CurvePoolState {
+            info: PoolInfo {
+                address: Address::ZERO, pool_type: "curve".into(),
+                token0: usdc(), token1: wmatic(), fee: 0,
+                name: None, dex_type: DexType::Curve, tick_spacing: None,
+            },
+            balances: vec![],
+            token_index: HashMap::new(),
+        });
+        let v2 = v2_pool(Address::ZERO, usdc(), wmatic(), 1000, 1000);
+        assert!(quote_path(&curve, &v2, usdc()).is_none());
+    }
+
+    // ---- TwoHopArbDetector::detect ----
+
+    #[test]
+    fn test_detect_finds_arb() {
+        let mut pm = PoolManager::new();
+        pm.add_pool(v2_pool(address!("1111111111111111111111111111111111111111"), usdc(), wmatic(), 1_000_000, 2_000_000));
+        pm.add_pool(v2_pool(address!("2222222222222222222222222222222222222222"), wmatic(), usdt(), 1_000_000, 2_000_000));
+        let opps = TwoHopArbDetector::detect(&pm, 42, 0, 12345, 50_000_000_000);
+        assert!(!opps.is_empty());
+        for opp in &opps {
+            assert_eq!(opp.block_number, 42);
+            assert_eq!(opp.strategy, Strategy::TwoHopArb);
+            assert!(opp.expected_profit > U256::ZERO);
+            assert!(opp.gas_cost_wei > 0);
+        }
+    }
+
+    #[test]
+    fn test_detect_empty_pool_manager() {
+        let pm = PoolManager::new();
+        assert!(TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000).is_empty());
+    }
+
+    #[test]
+    fn test_detect_single_pool_no_pairs() {
+        let mut pm = PoolManager::new();
+        pm.add_pool(v2_pool(address!("1111111111111111111111111111111111111111"), usdc(), wmatic(), 1_000_000, 2_000_000));
+        assert!(TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000).is_empty());
+    }
+}

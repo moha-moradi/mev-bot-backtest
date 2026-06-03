@@ -610,3 +610,399 @@ fn u128_from_be_bytes(bytes: &[u8]) -> u128 {
     buf.copy_from_slice(&bytes[start..start + 16]);
     u128::from_be_bytes(buf)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::{address, Address, B256, U256};
+    use crate::data::ExecutedLog;
+    use crate::pool::decoders::V3_SWAP_TOPIC;
+
+    fn wmatic() -> Address {
+        address!("0d500b1d8e8ef31e21c99d1db9a6444d3adf1270")
+    }
+    fn usdc() -> Address {
+        address!("2791bca1f2de4661ed88a30c99a7a9449aa84174")
+    }
+    fn usdt() -> Address {
+        address!("c2132d05d31c914a87c6611c10748aeb04b58e8f")
+    }
+
+    fn make_v2_pool(addr: Address, t0: Address, t1: Address, r0: u128, r1: u128) -> PoolState {
+        PoolState::UniswapV2(UniswapV2PoolState {
+            info: PoolInfo {
+                address: addr,
+                pool_type: "uniswap_v2".into(),
+                token0: t0,
+                token1: t1,
+                fee: 30,
+                name: None,
+                dex_type: DexType::UniswapV2,
+                tick_spacing: None,
+            },
+            reserve0: r0,
+            reserve1: r1,
+        })
+    }
+
+    fn make_v3_pool(addr: Address, t0: Address, t1: Address, sqrt: U256, tick: i32, liq: u128) -> PoolState {
+        PoolState::UniswapV3(UniswapV3PoolState {
+            info: PoolInfo {
+                address: addr,
+                pool_type: "uniswap_v3".into(),
+                token0: t0,
+                token1: t1,
+                fee: 30,
+                name: None,
+                dex_type: DexType::UniswapV3,
+                tick_spacing: Some(60),
+            },
+            sqrt_price_x96: sqrt,
+            tick,
+            liquidity: liq,
+            ticks: HashMap::new(),
+        })
+    }
+
+    fn encode_u256(value: u128) -> [u8; 32] {
+        let mut buf = [0u8; 32];
+        let be = value.to_be_bytes();
+        buf[16..32].copy_from_slice(&be);
+        buf
+    }
+
+    fn encode_i32_right(value: i32) -> [u8; 32] {
+        let mut buf = [0u8; 32];
+        let be = value.to_be_bytes();
+        buf[28..32].copy_from_slice(&be);
+        buf
+    }
+
+    // ---- PoolManager creation & management ----
+
+    #[test]
+    fn test_pm_new_and_empty() {
+        let pm = PoolManager::new();
+        assert_eq!(pm.pool_count(), 0);
+        assert!(pm.pool_addresses().is_empty());
+        assert!(pm.token_addresses().is_empty());
+    }
+
+    #[test]
+    fn test_pm_add_and_get_pool() {
+        let mut pm = PoolManager::new();
+        let addr = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        pm.add_pool(make_v2_pool(addr, usdc(), wmatic(), 1000, 2000));
+        assert_eq!(pm.pool_count(), 1);
+        let p = pm.get(&addr);
+        assert!(p.is_some());
+        assert_eq!(p.unwrap().address(), addr);
+    }
+
+    #[test]
+    fn test_pm_get_mut_updates_reserves() {
+        let mut pm = PoolManager::new();
+        let addr = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        pm.add_pool(make_v2_pool(addr, usdc(), wmatic(), 1000, 2000));
+        if let Some(PoolState::UniswapV2(s)) = pm.get_mut(&addr) {
+            s.reserve0 = 999;
+        }
+        if let Some(PoolState::UniswapV2(s)) = pm.get(&addr) {
+            assert_eq!(s.reserve0, 999);
+        } else {
+            panic!("expected V2 pool");
+        }
+    }
+
+    #[test]
+    fn test_pm_pool_addresses() {
+        let mut pm = PoolManager::new();
+        let a = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let b = address!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        pm.add_pool(make_v2_pool(a, usdc(), wmatic(), 1, 1));
+        pm.add_pool(make_v2_pool(b, usdt(), wmatic(), 1, 1));
+        let addrs = pm.pool_addresses();
+        assert_eq!(addrs.len(), 2);
+        assert!(addrs.contains(&a));
+        assert!(addrs.contains(&b));
+    }
+
+    #[test]
+    fn test_pm_token_addresses_and_pools_for_token() {
+        let mut pm = PoolManager::new();
+        let p1 = address!("1111111111111111111111111111111111111111");
+        let p2 = address!("2222222222222222222222222222222222222222");
+        pm.add_pool(make_v2_pool(p1, usdc(), wmatic(), 1, 1));
+        pm.add_pool(make_v2_pool(p2, usdt(), wmatic(), 1, 1));
+        let tokens = pm.token_addresses();
+        assert_eq!(tokens.len(), 3);
+        assert!(tokens.contains(&wmatic()));
+        let wmatic_pools = pm.pools_for_token(&wmatic()).unwrap();
+        assert_eq!(wmatic_pools.len(), 2);
+    }
+
+    #[test]
+    fn test_pm_find_pair_pool() {
+        let mut pm = PoolManager::new();
+        let p1 = address!("1111111111111111111111111111111111111111");
+        pm.add_pool(make_v2_pool(p1, usdc(), wmatic(), 1, 1));
+        assert_eq!(pm.find_pair_pool(&usdc(), &wmatic()), Some(p1));
+        assert!(pm.find_pair_pool(&usdc(), &usdt()).is_none());
+    }
+
+    #[test]
+    fn test_pm_arbitrage_pairs_caching() {
+        let mut pm = PoolManager::new();
+        let a = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let b = address!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        pm.add_pool(make_v2_pool(a, usdc(), wmatic(), 1, 1));
+        pm.add_pool(make_v2_pool(b, usdt(), wmatic(), 1, 1));
+        let pairs = pm.arbitrage_pairs();
+        assert_eq!(pairs.len(), 1);
+        let pairs2 = pm.arbitrage_pairs();
+        assert_eq!(pairs, pairs2);
+        let c = address!("cccccccccccccccccccccccccccccccccccccccc");
+        pm.add_pool(make_v2_pool(c, usdc(), usdt(), 1, 1));
+        assert_eq!(pm.arbitrage_pairs().len(), 3);
+    }
+
+    // ---- V2 state updates ----
+
+    #[test]
+    fn test_pm_apply_v2_swap() {
+        let mut pm = PoolManager::new();
+        let addr = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        pm.add_pool(make_v2_pool(addr, usdc(), wmatic(), 1000, 2000));
+        pm.apply_v2_swap(&addr, 100, 0, 0, 50);
+        if let Some(PoolState::UniswapV2(s)) = pm.get(&addr) {
+            assert_eq!(s.reserve0, 1100);
+            assert_eq!(s.reserve1, 1950);
+        }
+    }
+
+    #[test]
+    fn test_pm_apply_v2_sync() {
+        let mut pm = PoolManager::new();
+        let addr = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        pm.add_pool(make_v2_pool(addr, usdc(), wmatic(), 1000, 2000));
+        pm.apply_v2_sync(&addr, 999, 1999);
+        if let Some(PoolState::UniswapV2(s)) = pm.get(&addr) {
+            assert_eq!(s.reserve0, 999);
+            assert_eq!(s.reserve1, 1999);
+        }
+    }
+
+    #[test]
+    fn test_pm_apply_v2_swap_unknown_address_noop() {
+        let mut pm = PoolManager::new();
+        let addr = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        pm.add_pool(make_v2_pool(addr, usdc(), wmatic(), 1000, 2000));
+        let unknown = address!("ffffffffffffffffffffffffffffffffffffffff");
+        pm.apply_v2_swap(&unknown, 100, 0, 0, 50);
+        if let Some(PoolState::UniswapV2(s)) = pm.get(&addr) {
+            assert_eq!(s.reserve0, 1000);
+        }
+    }
+
+    // ---- V3 state updates ----
+
+    #[test]
+    fn test_pm_apply_v3_swap() {
+        let mut pm = PoolManager::new();
+        let addr = address!("3333333333333333333333333333333333333333");
+        pm.add_pool(make_v3_pool(addr, wmatic(), usdc(), U256::from(1u128 << 96), 0, 1_000_000));
+        pm.apply_v3_swap(&addr, U256::from(2u128 << 96), 10, 999_000);
+        if let Some(PoolState::UniswapV3(s)) = pm.get(&addr) {
+            assert_eq!(s.sqrt_price_x96, U256::from(2u128 << 96));
+            assert_eq!(s.tick, 10);
+            assert_eq!(s.liquidity, 999_000);
+        }
+    }
+
+    #[test]
+    fn test_pm_apply_v3_mint_burn_add() {
+        let mut pm = PoolManager::new();
+        let addr = address!("3333333333333333333333333333333333333333");
+        pm.add_pool(make_v3_pool(addr, wmatic(), usdc(), U256::from(1u128 << 96), 0, 1_000_000));
+        pm.apply_v3_mint_burn(&addr, -100, 100, 500_000);
+        if let Some(PoolState::UniswapV3(s)) = pm.get(&addr) {
+            assert_eq!(s.liquidity, 1_500_000);
+            assert_eq!(*s.ticks.get(&-100).unwrap(), 500_000);
+            assert_eq!(*s.ticks.get(&100).unwrap(), -500_000);
+        }
+    }
+
+    #[test]
+    fn test_pm_apply_v3_mint_burn_remove() {
+        let mut pm = PoolManager::new();
+        let addr = address!("3333333333333333333333333333333333333333");
+        pm.add_pool(make_v3_pool(addr, wmatic(), usdc(), U256::from(1u128 << 96), 0, 1_000_000));
+        pm.apply_v3_mint_burn(&addr, -100, 100, -200_000);
+        if let Some(PoolState::UniswapV3(s)) = pm.get(&addr) {
+            assert_eq!(s.liquidity, 800_000);
+            assert_eq!(*s.ticks.get(&-100).unwrap(), -200_000);
+            assert_eq!(*s.ticks.get(&100).unwrap(), 200_000);
+        }
+    }
+
+    // ---- initialized_count ----
+
+    #[test]
+    fn test_pm_initialized_count() {
+        let mut pm = PoolManager::new();
+        let a = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let b = address!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        let c = address!("cccccccccccccccccccccccccccccccccccccccc");
+        pm.add_pool(make_v2_pool(a, usdc(), wmatic(), 1000, 2000));
+        pm.add_pool(make_v2_pool(b, usdt(), wmatic(), 0, 0));
+        pm.add_pool(make_v3_pool(c, wmatic(), usdt(), U256::ZERO, 0, 0));
+        assert_eq!(pm.initialized_count(), 1);
+    }
+
+    // ---- update_from_logs ----
+
+    fn make_v2_swap_log(pool: Address, amt0_in: u128, amt1_in: u128, amt0_out: u128, amt1_out: u128) -> ExecutedLog {
+        let mut data = Vec::with_capacity(128);
+        data.extend_from_slice(&encode_u256(amt0_in));
+        data.extend_from_slice(&encode_u256(amt1_in));
+        data.extend_from_slice(&encode_u256(amt0_out));
+        data.extend_from_slice(&encode_u256(amt1_out));
+        ExecutedLog {
+            address: pool,
+            topics: vec![SWAP_TOPIC, B256::ZERO, B256::ZERO],
+            data: data.into(),
+        }
+    }
+
+    fn make_v2_sync_log(pool: Address, r0: u128, r1: u128) -> ExecutedLog {
+        let mut data = Vec::with_capacity(64);
+        data.extend_from_slice(&encode_u256(r0));
+        data.extend_from_slice(&encode_u256(r1));
+        ExecutedLog {
+            address: pool,
+            topics: vec![SYNC_TOPIC],
+            data: data.into(),
+        }
+    }
+
+    fn make_v3_swap_log(pool: Address, sqrt: U256, liq: u128, tick: i32) -> ExecutedLog {
+        let mut data = Vec::with_capacity(96);
+        let mut b = [0u8; 32];
+        b.copy_from_slice(&sqrt.to_be_bytes::<32>());
+        data.extend_from_slice(&b);
+        data.extend_from_slice(&encode_u256(liq));
+        data.extend_from_slice(&encode_i32_right(tick));
+        ExecutedLog {
+            address: pool,
+            topics: vec![V3_SWAP_TOPIC, B256::ZERO, B256::ZERO],
+            data: data.into(),
+        }
+    }
+
+    #[test]
+    fn test_pm_update_from_logs_v2_swap() {
+        let mut pm = PoolManager::new();
+        let addr = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        pm.add_pool(make_v2_pool(addr, usdc(), wmatic(), 1000, 2000));
+        let log = make_v2_swap_log(addr, 100, 0, 0, 50);
+        pm.update_from_logs(&[log]);
+        if let Some(PoolState::UniswapV2(s)) = pm.get(&addr) {
+            assert_eq!(s.reserve0, 1100);
+            assert_eq!(s.reserve1, 1950);
+        }
+    }
+
+    #[test]
+    fn test_pm_update_from_logs_v2_sync() {
+        let mut pm = PoolManager::new();
+        let addr = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        pm.add_pool(make_v2_pool(addr, usdc(), wmatic(), 1000, 2000));
+        let log = make_v2_sync_log(addr, 555, 666);
+        pm.update_from_logs(&[log]);
+        if let Some(PoolState::UniswapV2(s)) = pm.get(&addr) {
+            assert_eq!(s.reserve0, 555);
+            assert_eq!(s.reserve1, 666);
+        }
+    }
+
+    #[test]
+    fn test_pm_update_from_logs_v3_swap() {
+        let mut pm = PoolManager::new();
+        let addr = address!("3333333333333333333333333333333333333333");
+        pm.add_pool(make_v3_pool(addr, wmatic(), usdc(), U256::from(1u128 << 96), 0, 1_000_000));
+        let new_sqrt = U256::from(15u128 << 96) / U256::from(10);
+        let log = make_v3_swap_log(addr, new_sqrt, 999_000, 5);
+        pm.update_from_logs(&[log]);
+        if let Some(PoolState::UniswapV3(s)) = pm.get(&addr) {
+            assert_eq!(s.sqrt_price_x96, new_sqrt);
+            assert_eq!(s.liquidity, 999_000);
+            assert_eq!(s.tick, 5);
+        }
+    }
+
+    #[test]
+    fn test_pm_update_from_logs_ignores_untracked_pool() {
+        let mut pm = PoolManager::new();
+        let addr = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        pm.add_pool(make_v2_pool(addr, usdc(), wmatic(), 1000, 2000));
+        let unknown = address!("ffffffffffffffffffffffffffffffffffffffff");
+        pm.update_from_logs(&[make_v2_swap_log(unknown, 100, 0, 0, 50)]);
+        if let Some(PoolState::UniswapV2(s)) = pm.get(&addr) {
+            assert_eq!(s.reserve0, 1000);
+        }
+    }
+
+    #[test]
+    fn test_pm_update_from_logs_empty_topics_skipped() {
+        let mut pm = PoolManager::new();
+        let addr = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        pm.add_pool(make_v2_pool(addr, usdc(), wmatic(), 1000, 2000));
+        let log = ExecutedLog {
+            address: addr,
+            topics: vec![],
+            data: Default::default(),
+        };
+        pm.update_from_logs(&[log]);
+        if let Some(PoolState::UniswapV2(s)) = pm.get(&addr) {
+            assert_eq!(s.reserve0, 1000);
+        }
+    }
+
+    // ---- PoolState helpers ----
+
+    #[test]
+    fn test_pool_info_is_concentrated_liquidity() {
+        let a = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let v2 = make_v2_pool(a, usdc(), wmatic(), 1, 1);
+        assert!(!v2.info().is_concentrated_liquidity());
+        let v3_addr = address!("3333333333333333333333333333333333333333");
+        let v3 = make_v3_pool(v3_addr, wmatic(), usdc(), U256::from(1u128 << 96), 0, 1);
+        assert!(v3.info().is_concentrated_liquidity());
+    }
+
+    // ---- PoolState::info / info_mut ----
+
+    #[test]
+    fn test_pool_state_info_mut() {
+        let mut pm = PoolManager::new();
+        let addr = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        pm.add_pool(make_v2_pool(addr, usdc(), wmatic(), 1000, 2000));
+        pm.get_mut(&addr).unwrap().info_mut().fee = 100;
+        assert_eq!(pm.get(&addr).unwrap().info().fee, 100);
+    }
+
+    // ---- u128_from_be_bytes helper ----
+
+    #[test]
+    fn test_u128_from_be_bytes_basic() {
+        let mut buf = [0u8; 32];
+        buf[16..32].copy_from_slice(&1000u128.to_be_bytes());
+        assert_eq!(super::u128_from_be_bytes(&buf), 1000);
+    }
+
+    #[test]
+    fn test_u128_from_be_bytes_zero() {
+        let buf = [0u8; 32];
+        assert_eq!(super::u128_from_be_bytes(&buf), 0);
+    }
+}

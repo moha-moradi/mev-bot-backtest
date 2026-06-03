@@ -380,3 +380,28 @@ fn alloy_receipt_to_receipt_data(receipt: &TransactionReceipt) -> ReceiptData {
         contract_address: receipt.contract_address,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_retry_config_defaults() {
+        let cfg = RetryConfig::default();
+        assert_eq!(cfg.max_retries, 5);
+        assert_eq!(cfg.base_delay_ms, 200);
+        assert_eq!(cfg.max_delay_ms, 5000);
+    }
+
+    #[test]
+    fn test_rpc_client_invalid_url() {
+        let result = RpcClient::new("not-a-url", 1);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rpc_client_chain_id() {
+        let client = RpcClient::new("http://localhost:9999", 137).unwrap();
+        assert_eq!(client.chain_id(), 137);
+    }
+}
