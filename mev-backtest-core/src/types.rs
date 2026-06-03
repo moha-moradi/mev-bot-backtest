@@ -145,20 +145,12 @@ impl FlashLoanProvider {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Strategy {
     TwoHopArb,
-    MultiHopArb,
-    Jit,
-    JitArb,
-    Sandwich,
 }
 
 impl fmt::Display for Strategy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Strategy::TwoHopArb => write!(f, "two_hop_arb"),
-            Strategy::MultiHopArb => write!(f, "multi_hop_arb"),
-            Strategy::Jit => write!(f, "jit"),
-            Strategy::JitArb => write!(f, "jit_arb"),
-            Strategy::Sandwich => write!(f, "sandwich"),
         }
     }
 }
@@ -169,12 +161,8 @@ impl FromStr for Strategy {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "two_hop_arb" => Ok(Strategy::TwoHopArb),
-            "multi_hop_arb" => Ok(Strategy::MultiHopArb),
-            "jit" => Ok(Strategy::Jit),
-            "jit_arb" => Ok(Strategy::JitArb),
-            "sandwich" => Ok(Strategy::Sandwich),
             _ => Err(format!(
-                "unknown strategy '{s}'. Supported: two_hop_arb, multi_hop_arb, jit, jit_arb, sandwich, all"
+                "unknown strategy '{s}'. Supported: two_hop_arb, all"
             )),
         }
     }
@@ -182,13 +170,7 @@ impl FromStr for Strategy {
 
 impl Strategy {
     pub fn all() -> &'static [Strategy] {
-        &[
-            Strategy::TwoHopArb,
-            Strategy::MultiHopArb,
-            Strategy::Jit,
-            Strategy::JitArb,
-            Strategy::Sandwich,
-        ]
+        &[Strategy::TwoHopArb]
     }
 
     pub fn from_comma_list(s: &str) -> Result<Vec<Strategy>, String> {
@@ -302,12 +284,4 @@ impl FromStr for OutputFormat {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Command {
-    Run,
-    Fetch,
-    Report,
-    Config,
-    Replay,
-    GenerateRegistry,
-}
+

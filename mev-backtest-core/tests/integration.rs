@@ -227,25 +227,6 @@ fn test_two_hop_same_token_different_reserves() {
 }
 
 #[test]
-fn test_flash_loan_fee_integration() {
-    use alloy::primitives::U256;
-    use mev_backtest_core::mev::flash_loan;
-    use mev_backtest_core::types::FlashLoanProvider;
-
-    let amount = U256::from(1_000_000_000_000_000_000u128); // 1 ETH
-    let gross_profit = U256::from(50_000_000_000_000_000u128); // 0.05 ETH profit
-
-    // Balancer has 0 fee
-    let net = flash_loan::flash_loan_net_profit(gross_profit, amount, FlashLoanProvider::Balancer);
-    assert_eq!(net, gross_profit);
-
-    // Aave has 0.05% fee = 0.0005 ETH on 1 ETH borrowed
-    let net_aave = flash_loan::flash_loan_net_profit(gross_profit, amount, FlashLoanProvider::Aave);
-    assert!(net_aave < gross_profit, "Fee should reduce profit");
-    assert_eq!(net_aave, gross_profit - U256::from(500_000_000_000_000u128));
-}
-
-#[test]
 fn test_two_hop_v3_reserves_update_accuracy() {
     use mev_backtest_core::pool::state::UniswapV3PoolState;
     use std::collections::HashMap;

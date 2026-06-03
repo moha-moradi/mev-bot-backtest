@@ -38,9 +38,6 @@ pub enum Command {
     /// Replay a specific block for debugging (not yet implemented)
     Replay(ReplayArgs),
 
-    /// Generate a pool registry JSON using TheGraph or on-chain discovery
-    #[command(name = "generate-registry")]
-    GenerateRegistry(GenerateRegistryArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -119,53 +116,6 @@ pub struct FetchArgs {
 
     #[command(flatten)]
     pub chain_args: ChainArgs,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct GenerateRegistryArgs {
-    /// Chain name: polygon, avalanche, bsc, arbitrum, base, ethereum, optimism
-    #[arg(short = 'n', long, default_value = "polygon", value_name = "NAME")]
-    pub chain: String,
-
-    /// Output path for the registry JSON file
-    #[arg(short = 'o', long = "output", default_value = "./pools/{chain}.json", value_name = "PATH")]
-    pub output: String,
-
-    /// Source: "thegraph" or "onchain" (default: thegraph)
-    #[arg(long, default_value = "thegraph", value_name = "SOURCE")]
-    pub source: String,
-
-    /// TheGraph API key (required for thegraph source)
-    #[arg(long, env = "THEGRAPH_API_KEY", value_name = "KEY")]
-    pub graph_api_key: Option<String>,
-
-    /// Include V2 pools
-    #[arg(long, default_value_t = true)]
-    pub v2: bool,
-
-    /// Include V3 pools
-    #[arg(long, default_value_t = true)]
-    pub v3: bool,
-
-    /// Override TheGraph V2 subgraph URL template
-    #[arg(long, value_name = "URL")]
-    pub graph_v2_url: Option<String>,
-
-    /// Override TheGraph V3 subgraph URL template
-    #[arg(long, value_name = "URL")]
-    pub graph_v3_url: Option<String>,
-
-    /// RPC URL for on-chain discovery
-    #[arg(long, value_name = "URL")]
-    pub rpc_url: Option<String>,
-
-    /// From block for on-chain discovery
-    #[arg(long, default_value_t = 0, value_name = "NUMBER")]
-    pub from_block: u64,
-
-    /// To block for on-chain discovery (default: latest)
-    #[arg(long, value_name = "NUMBER")]
-    pub to_block: Option<u64>,
 }
 
 #[derive(Args, Debug, Clone)]

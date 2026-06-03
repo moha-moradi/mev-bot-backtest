@@ -6,15 +6,11 @@ use comfy_table::Table;
 use indicatif::{ProgressBar, ProgressStyle};
 use tracing_subscriber::EnvFilter;
 
-use std::collections::HashSet;
-
-use alloy::primitives::Address;
 use mev_backtest_core::cache::{CacheStore, RunManifest};
 use mev_backtest_core::cli::{Cli, Command};
 use mev_backtest_core::config::CliOverrides;
 use mev_backtest_core::fetch::Fetcher;
 
-use mev_backtest_core::pool::graph_client::TheGraphClient;
 use mev_backtest_core::pool::state::PoolManager;
 use mev_backtest_core::replay::BlockReplayer;
 use mev_backtest_core::resolver::RangeResolver;
@@ -84,21 +80,6 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             output: None,
             export_path: None,
             cache_dir: Some(args.cache_dir.clone()),
-        },
-        Command::GenerateRegistry(_) => CliOverrides {
-            days: None,
-            blocks: None,
-            block: None,
-            from_block: None,
-            to_block: None,
-            chain: None,
-            rpc_url: None,
-            flash_loan_provider: None,
-            strategies: None,
-            gas_model: None,
-            output: None,
-            export_path: None,
-            cache_dir: None,
         },
         Command::Report | Command::Config => CliOverrides {
             days: None,
@@ -453,118 +434,7 @@ async fn main() -> anyhow::Result<()> {
                 );
             }
         }
-        Command::GenerateRegistry(args) => {
-            generate_registry(args).await?;
-        }
     }
-
-    Ok(())
-}
-
-async fn generate_registry(args: &mev_backtest_core::cli::GenerateRegistryArgs) -> anyhow::Result<()> {
-    let chain: mev_backtest_core::types::ChainName = args.chain.parse()
-        .map_err(|e: String| anyhow::anyhow!("{}", e))?;
-    let chain_name = chain.to_string();
-
-    let output_path = args.output.replace("{chain}", &chain_name);
-
-    let config = mev_backtest_core::config::Config::default();
-    let chain_config = config.chains.get(&chain_name)
-        .ok_or_else(|| anyhow::anyhow!("Unknown chain: {}", chain_name))?;
-
-    let rpc_url = args.rpc_url.clone()
-        .unwrap_or_else(|| chain.public_rpc_url().to_string());
-    let rpc = RpcClient::new(&rpc_url, chain_config.chain_id)?;
-
-    // Load any existing pools to avoid duplicates
-    let existing: HashSet<Address> = if std::path::Path::new(&output_path).exists() {
-        mev_backtest_core::pool::registry::PoolRegistry::load(&output_path)?
-            .iter()
-            .map(|p| p.address)
-            .collect()
-    } else {
-        HashSet::new()
-    };
-
-    let mut all_pools = Vec::new();
-
-    match args.source.as_str() {
-        "thegraph" => {
-            let api_key = args.graph_api_key.as_deref()
-                .ok_or_else(|| anyhow::anyhow!(
-                    "TheGraph API key required. Set THEGRAPH_API_KEY env var or pass --graph-api-key"
-                ))?;
-
-            let mut client = TheGraphClient::new(api_key.to_string());
-            if let Some(v2_url) = &args.graph_v2_url {
-                let v3_url = args.graph_v3_url.clone()
-                    .unwrap_or_else(|| "".to_string());
-                client = client.with_custom_urls(v2_url.clone(), v3_url);
-            }
-
-            if args.v2 {
-                let v2_factories = chain_config.uniswap_v2_factories.as_ref();
-                if let Some(factories) = v2_factories {
-                    for factory_str in factories {
-                        let factory = factory_str.parse::<Address>()?;
-                        let pools = client.fetch_v2_pools(Some(factory), &existing).await?;
-                        tracing::info!("TheGraph V2: {} new pools from factory {}", pools.len(), factory_str);
-                        all_pools.extend(pools);
-                    }
-                } else {
-                    // No factory filter: fetch all pairs
-                    let pools = client.fetch_v2_pools(None, &existing).await?;
-                    tracing::info!("TheGraph V2: {} new pools (no factory filter)", pools.len());
-                    all_pools.extend(pools);
-                }
-            }
-
-            if args.v3 {
-                let v3_factory = chain_config.uniswap_v3_factory.as_ref()
-                    .and_then(|f| f.parse::<Address>().ok());
-                let pools = client.fetch_v3_pools(v3_factory, &existing).await?;
-                tracing::info!("TheGraph V3: {} new pools", pools.len());
-                all_pools.extend(pools);
-            }
-        }
-        "onchain" => {
-            let discoverer = mev_backtest_core::pool::discovery::PoolDiscoverer::new(rpc);
-            let to_block = args.to_block.unwrap_or(u64::MAX);
-            let factories: Vec<Address> = chain_config.uniswap_v2_factories.as_ref()
-                .map(|f| f.iter().filter_map(|s| s.parse::<Address>().ok()).collect())
-                .unwrap_or_default();
-            let pools = discoverer.discover_new_pools(
-                &factories,
-                args.from_block,
-                to_block,
-                &existing,
-            ).await?;
-            tracing::info!("On-chain V2: {} new pools", pools.len());
-            all_pools.extend(pools);
-        }
-        other => anyhow::bail!("Unknown source: {}. Use 'thegraph' or 'onchain'", other),
-    }
-
-    if all_pools.is_empty() {
-        println!("No new pools discovered for chain '{}'.", chain_name);
-        return Ok(());
-    }
-
-    // Merge with existing pools
-    let mut registry = if std::path::Path::new(&output_path).exists() {
-        mev_backtest_core::pool::registry::PoolRegistry::load(&output_path)?
-    } else {
-        Vec::new()
-    };
-    registry.extend(all_pools);
-
-    // Write output
-    if let Some(parent) = std::path::Path::new(&output_path).parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let json = serde_json::to_string_pretty(&registry)?;
-    std::fs::write(&output_path, &json)?;
-    println!("Pool registry written to '{}' ({} pools)", output_path, registry.len());
 
     Ok(())
 }

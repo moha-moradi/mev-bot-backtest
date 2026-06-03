@@ -257,42 +257,6 @@ Seven chains are preconfigured with chain IDs, contract addresses, factory addre
 
 ## Architecture & Execution Flow
 
-```mermaid
-flowchart TD
-    A["CLI: mev-backtest run/fetch/replay/config"] --> B["Parse CLI args (clap)"]
-    B --> C["Load TOML config file"]
-    C --> D["Merge CLI overrides into config"]
-    D --> E{"Subcommand?"}
-
-    E -->|run| F["Validate & Resolve"]
-    E -->|fetch| G["Pre-cache blocks (no strategies)"]
-    E -->|replay| H["Debug replay of single block"]
-    E -->|config| I["Print resolved config as TOML"]
-
-    F --> J["Print Startup Plan"]
-    J --> K["Initialize RPC Client"]
-    K --> L["Resolve Block Range<br/>(binary search for --days,<br/>chain tip for --blocks)"]
-    L --> M["Load Pool Registry JSON"]
-    M --> N["Initialize Pool Reserves<br/>via eth_call getReserves()"]
-
-    N --> O{"For each block in range"}
-
-    O --> P["Load block, txs, receipts<br/>(from cache or RPC)"]
-    P --> Q["Build revm Context<br/>with CachedRpcDb"]
-    Q --> R{"For each tx in block"}
-
-    R --> S{"Tx touches tracked<br/>pool or token?"}
-    S -->|Yes| T["Execute in revm EVM<br/>(full re-execution)"]
-    S -->|No| U["Build ExecutedTx<br/>from cached receipt"]
-    T --> V["Verify receipt match<br/>(status, gas, logs)"]
-    U --> V
-    V --> W["Update pool reserves<br/>from Swap/Sync events"]
-    W --> X["Run TwoHopArbDetector<br/>on current pool state"]
-    X --> Y["Collect MEV opportunities"]
-
-    Y --> R
-    Y --> Z["Report Results<br/>(table / CSV / JSON)"]
-```
 
 ### Detailed execution walkthrough
 

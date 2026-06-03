@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use crate::config::{ChainConfig, Config};
 use crate::types::{
     ChainName, FlashLoanProvider, GasModel, OutputFormat, RangeMode, Strategy,
@@ -240,41 +238,9 @@ pub fn validate_and_resolve_for(config: &Config, check_strategies: bool) -> Resu
 
     // 4. Parse and validate strategies (skip for fetch/report subcommands)
     let strategies: Vec<Strategy> = if check_strategies {
-        let mut s = Strategy::from_comma_list(&config.strategies)
+        let s = Strategy::from_comma_list(&config.strategies)
             .map_err(|e| ValidationError::Message(format!("Error: {e}")))?;
 
-        // Check for JIT/JIT+Arb with no CL pools
-        let has_cl_pools = {
-            if let Some(reg_path) = &chain_config.pools_registry_path {
-                if let Ok(content) = std::fs::read_to_string(reg_path) {
-                    if let Ok(pools) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
-                        pools.iter().any(|p| {
-                            p.get("is_concentrated_liquidity")
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false)
-                        })
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        };
-
-        let jit_strategies: HashSet<Strategy> = [Strategy::Jit, Strategy::JitArb].into();
-        let has_jit = s.iter().any(|st| jit_strategies.contains(st));
-
-        if has_jit && !has_cl_pools {
-            tracing::warn!(
-                "No concentrated liquidity pools found for chain '{}'. \
-                 JIT strategy requires Uniswap V3 fork pools. Skipping JIT/JIT_Arb.",
-                chain_name
-            );
-            s.retain(|st| !jit_strategies.contains(st));
-        }
         s
     } else {
         Vec::new()
