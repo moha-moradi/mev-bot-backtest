@@ -1,4 +1,4 @@
-use std::path::Path;
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
@@ -8,7 +8,7 @@ use tracing_subscriber::EnvFilter;
 
 use mev_backtest_core::cache::{CacheStore, RunManifest};
 use mev_backtest_core::cli::{Cli, Command};
-use mev_backtest_core::config::CliOverrides;
+use mev_backtest_core::config::{CliOverrides, Config};
 use mev_backtest_core::fetch::Fetcher;
 
 use mev_backtest_core::pool::state::PoolManager;
@@ -131,13 +131,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Load config
     let config_path = cli.config.as_deref().unwrap_or("mev-backtest.toml");
-    let mut config = if Path::new(config_path).exists() {
-        mev_backtest_core::config::Config::load(config_path)?
-    } else {
-        let mut cfg = mev_backtest_core::config::Config::default();
-        cfg.config_path = Some(std::path::PathBuf::from(config_path));
-        cfg
-    };
+    let mut config = Config::load_or_default(config_path);
 
     // Merge CLI overrides
     let overrides = build_overrides(&cli);
@@ -391,8 +385,8 @@ async fn main() -> anyhow::Result<()> {
             let elapsed = start.elapsed();
 
             println!(
-                "  {:<4} {:<66} {:<6} {:<8} {}",
-                "idx", "tx_hash", "status", "gas_used", "receipt"
+                "  {:<4} {:<66} {:<6} {:<8} receipt",
+                "idx", "tx_hash", "status", "gas_used",
             );
             println!("  {}", "─".repeat(100));
 
@@ -438,8 +432,5 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
-
-
-
 
 

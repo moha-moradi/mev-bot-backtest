@@ -209,7 +209,7 @@ fn compute_swap_step(
     sqrt_ratio_target_x96: U256,
     liquidity: u128,
     amount_remaining: U256,
-    fee_bps: u32,
+    fee: u32,
 ) -> (U256, U256, U256, U256) {
     let zero_for_one = sqrt_ratio_target_x96 < sqrt_ratio_current_x96;
 
@@ -231,7 +231,7 @@ fn compute_swap_step(
     .unwrap_or(U256::ZERO);
 
     let fee_on_max =
-        mul_div_round_up(max_in, U256::from(fee_bps as u64), U256::from(1_000_000u64))
+        mul_div_round_up(max_in, U256::from(fee as u64), U256::from(1_000_000u64))
             .unwrap_or(U256::ZERO);
     let total_max_cost = max_in + fee_on_max;
 
@@ -258,7 +258,7 @@ fn compute_swap_step(
         let remaining = amount_remaining;
         let fee_amount = mul_div_round_up(
             remaining,
-            U256::from(fee_bps as u64),
+            U256::from(fee as u64),
             U256::from(1_000_000u64),
         )
         .unwrap_or(U256::ZERO);
@@ -320,12 +320,12 @@ fn find_next_initialized_tick(
 }
 
 #[allow(dead_code)]
-fn get_tick_spacing_from_fee(fee_bps: u32) -> i32 {
-    if fee_bps <= 100 {
+fn get_tick_spacing_from_fee(fee: u32) -> i32 {
+    if fee <= 100 {
         1
-    } else if fee_bps <= 500 {
+    } else if fee <= 500 {
         10
-    } else if fee_bps <= 3000 {
+    } else if fee <= 3000 {
         60
     } else {
         200
@@ -462,7 +462,6 @@ mod tests {
         UniswapV3PoolState {
             info: PoolInfo {
                 address: alloy::primitives::Address::ZERO,
-                pool_type: "uniswap_v3".into(),
                 token0: alloy::primitives::Address::ZERO,
                 token1: alloy::primitives::Address::ZERO,
                 fee,
@@ -501,7 +500,7 @@ mod tests {
     fn test_get_sqrt_ratio_reciprocal() {
         let pos = get_sqrt_ratio_at_tick(100);
         let neg = get_sqrt_ratio_at_tick(-100);
-        let p_512 = limbs_to_u512(&pos.as_limbs()) * limbs_to_u512(&neg.as_limbs());
+        let p_512 = limbs_to_u512(pos.as_limbs()) * limbs_to_u512(neg.as_limbs());
         let one = limbs_to_u512(&[1, 0, 0, 0]);
         let two_192 = (one << 96) * (one << 96);
         // Product should be approximately 2^192 (within ±2^128)

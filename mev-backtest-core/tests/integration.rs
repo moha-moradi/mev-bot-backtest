@@ -24,7 +24,6 @@ fn make_pool(addr: Address, token0: Address, token1: Address, r0: u128, r1: u128
     PoolState::UniswapV2(UniswapV2PoolState {
         info: PoolInfo {
             address: addr,
-            pool_type: "uniswap_v2".into(),
             token0,
             token1,
             fee: 30,
@@ -117,11 +116,7 @@ fn test_gas_cost_min_profit_filter() {
     for opp in &opps {
         assert!(opp.gas_cost_wei > 0);
         let expected_gas = 200_000u128 * 50_000_000_000;
-        let diff = if opp.gas_cost_wei > expected_gas {
-            opp.gas_cost_wei - expected_gas
-        } else {
-            expected_gas - opp.gas_cost_wei
-        };
+        let diff = opp.gas_cost_wei.abs_diff(expected_gas);
         assert!(diff < 1000, "Gas cost mismatch: {} vs {}", opp.gas_cost_wei, expected_gas);
     }
 }
@@ -236,7 +231,6 @@ fn test_two_hop_v3_reserves_update_accuracy() {
     let v3_pool = PoolState::UniswapV3(UniswapV3PoolState {
         info: PoolInfo {
             address: v3_addr,
-            pool_type: "uniswap_v3".into(),
             token0: wmatic(),
             token1: usdc(),
             fee: 30,

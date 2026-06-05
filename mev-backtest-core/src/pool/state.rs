@@ -17,13 +17,11 @@ use crate::rpc::RpcClient;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PoolInfo {
     pub address: Address,
-    #[serde(rename = "type")]
-    pub pool_type: String,
     pub token0: Address,
     pub token1: Address,
     pub fee: u32,
     pub name: Option<String>,
-    #[serde(default)]
+    #[serde(rename = "type")]
     pub dex_type: DexType,
     #[serde(default)]
     pub tick_spacing: Option<u32>,
@@ -335,7 +333,7 @@ impl PoolManager {
     /// Fetches all pools in parallel, capped at 20 concurrent calls.
     pub async fn init_from_rpc(&mut self, rpc: &RpcClient, block_num: u64) {
         let pool_addrs: Vec<Address> = self.pools.keys().copied().collect();
-        let cap = pool_addrs.len().min(20).max(1);
+        let cap = pool_addrs.len().clamp(1, 20);
         let semaphore = Arc::new(Semaphore::new(cap));
 
         // Snapshot dex types before spawning tasks
@@ -632,7 +630,6 @@ mod tests {
         PoolState::UniswapV2(UniswapV2PoolState {
             info: PoolInfo {
                 address: addr,
-                pool_type: "uniswap_v2".into(),
                 token0: t0,
                 token1: t1,
                 fee: 30,
@@ -649,7 +646,6 @@ mod tests {
         PoolState::UniswapV3(UniswapV3PoolState {
             info: PoolInfo {
                 address: addr,
-                pool_type: "uniswap_v3".into(),
                 token0: t0,
                 token1: t1,
                 fee: 30,

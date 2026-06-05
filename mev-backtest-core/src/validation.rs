@@ -75,7 +75,7 @@ fn check_range_conflicts(cfg: &Config) -> Result<RangeMode, ValidationError> {
     }
 
     if let Some(d) = cfg.days {
-        if d < 1 || d > 365 {
+        if !(1..=365).contains(&d) {
             return Err(ValidationError::Message(
                 "Error: --days must be between 1 and 365.".to_string(),
             ));

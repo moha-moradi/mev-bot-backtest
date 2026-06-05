@@ -214,8 +214,7 @@ mod tests {
     fn v2_pool(addr: Address, t0: Address, t1: Address, r0: u128, r1: u128) -> PoolState {
         PoolState::UniswapV2(UniswapV2PoolState {
             info: PoolInfo {
-                address: addr, pool_type: "uniswap_v2".into(),
-                token0: t0, token1: t1, fee: 30,
+                address: addr, token0: t0, token1: t1, fee: 30,
                 name: None, dex_type: DexType::UniswapV2, tick_spacing: None,
             },
             reserve0: r0, reserve1: r1,
@@ -225,8 +224,7 @@ mod tests {
     fn v3_pool(addr: Address, t0: Address, t1: Address, sqrt: U256, tick: i32, liq: u128) -> PoolState {
         PoolState::UniswapV3(UniswapV3PoolState {
             info: PoolInfo {
-                address: addr, pool_type: "uniswap_v3".into(),
-                token0: t0, token1: t1, fee: 30,
+                address: addr, token0: t0, token1: t1, fee: 30,
                 name: None, dex_type: DexType::UniswapV3, tick_spacing: Some(60),
             },
             sqrt_price_x96: sqrt, tick, liquidity: liq,
@@ -268,7 +266,6 @@ mod tests {
         let pool = UniswapV2PoolState {
             info: PoolInfo {
                 address: address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-                pool_type: "uniswap_v2".into(),
                 token0: usdc(), token1: wmatic(), fee: 30,
                 name: None, dex_type: DexType::UniswapV2, tick_spacing: None,
             },
@@ -285,7 +282,6 @@ mod tests {
         let pool = UniswapV2PoolState {
             info: PoolInfo {
                 address: address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-                pool_type: "uniswap_v2".into(),
                 token0: wmatic(), token1: usdt(), fee: 30,
                 name: None, dex_type: DexType::UniswapV2, tick_spacing: None,
             },
@@ -342,8 +338,7 @@ mod tests {
     fn test_quote_path_unsupported_types_returns_none() {
         let curve = PoolState::Curve(crate::pool::state::CurvePoolState {
             info: PoolInfo {
-                address: Address::ZERO, pool_type: "curve".into(),
-                token0: usdc(), token1: wmatic(), fee: 0,
+                address: Address::ZERO, token0: usdc(), token1: wmatic(), fee: 0,
                 name: None, dex_type: DexType::Curve, tick_spacing: None,
             },
             balances: vec![],

@@ -114,7 +114,12 @@ pub fn decode_v3_mint_burn(log: &ExecutedLog) -> Option<V3MintBurnDecoded> {
         upper_bytes[30],
         upper_bytes[31],
     ]);
-    let amount = u128_from_be_bytes_32(&log.data[64..96]) as i128;
+    let raw = u128_from_be_bytes_32(&log.data[64..96]);
+    let amount = if log.topics[0] == V3_BURN_TOPIC {
+        -(raw as i128)
+    } else {
+        raw as i128
+    };
 
     Some(V3MintBurnDecoded {
         tick_lower,

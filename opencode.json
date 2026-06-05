@@ -1,6 +1,6 @@
 {
-    "$schema": "https://opencode.ai/config.json",
-     "permission": {
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
     "bash": "allow",
     "read": "allow",
     "grep": "allow",
@@ -13,16 +13,17 @@
     "websearch": "allow",
     "question": "allow"
   },
-    "plugin": [
-      "oh-my-opencode",
-      "envsitter-guard",
-      "opencode-worktree",
-      "opencode-helicone-session",
-      "opencode-skills",
-      "@tarquinen/opencode-dcp@latest"
-      ,"@plannotator/opencode",
-      "@gotgenes/opencode-agent-identity"
-      ,"opencode-mem",
-      "opencode-froggy"
-    ]
-  }
+  "plugin": [
+    "oh-my-opencode",
+    "envsitter-guard",
+    "opencode-worktree",
+    "superpowers@git+https://github.com/obra/superpowers.git",
+    "opencode-helicone-session",
+    "opencode-skills",
+    "@tarquinen/opencode-dcp@latest",
+    "@plannotator/opencode",
+    "@gotgenes/opencode-agent-identity",
+    "opencode-mem",
+    "opencode-froggy"
+  ]
+}

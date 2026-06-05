@@ -247,11 +247,9 @@ impl Config {
     }
 
     pub fn load_or_default(path: &str) -> Self {
-        if let Ok(cfg) = Self::load(path) {
-            cfg
-        } else {
-            Config::default()
-        }
+        let mut cfg = Self::load(path).unwrap_or_default();
+        cfg.config_path = Some(PathBuf::from(path));
+        cfg
     }
 
     pub fn default_with_chains() -> Self {
@@ -400,8 +398,10 @@ mod tests {
 
     #[test]
     fn test_effective_rpc_url_uses_override() {
-        let mut cfg = Config::default();
-        cfg.rpc_url = Some("https://my-rpc.example.com".into());
+        let cfg = Config {
+            rpc_url: Some("https://my-rpc.example.com".into()),
+            ..Config::default()
+        };
         assert_eq!(cfg.effective_rpc_url(ChainName::Polygon), "https://my-rpc.example.com");
     }
 
@@ -449,7 +449,6 @@ rpc_url = "https://eth.diy"
 
     #[test]
     fn test_merge_cli_full_override() {
-        let mut cfg = Config::default();
         let overrides = CliOverrides {
             days: Some(14), blocks: None, block: None,
             from_block: None, to_block: None,
@@ -462,6 +461,7 @@ rpc_url = "https://eth.diy"
             export_path: Some("./out".into()),
             cache_dir: Some("./db".into()),
         };
+        let mut cfg = Config::default();
         cfg.merge_cli(&overrides);
         assert_eq!(cfg.days, Some(14));
         assert_eq!(cfg.chain, "ethereum");

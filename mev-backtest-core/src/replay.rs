@@ -339,27 +339,19 @@ pub fn register_polygon_precompiles(
     block_num: u64,
 ) -> anyhow::Result<()> {
     let prev_block = block_num.saturating_sub(1);
-    let rpc: RpcClient;
-    let handle: tokio::runtime::Handle;
-    let code_09: Bytes;
-    let code_0a: Bytes;
-    let code_0b: Bytes;
-    let code_0c: Bytes;
-
-    {
+    let (rpc, handle) = {
         let inner = &db.db;
-        rpc = inner.rpc.clone();
-        handle = inner.handle.clone();
-    }
+        (inner.rpc.clone(), inner.handle.clone())
+    };
 
     let block_on = |f| tokio::task::block_in_place(|| handle.block_on(f));
-    code_09 = block_on(rpc.get_code_no_retry(addr_from_last_byte(0x09), prev_block))
+    let code_09 = block_on(rpc.get_code_no_retry(addr_from_last_byte(0x09), prev_block))
         .unwrap_or_default();
-    code_0a = block_on(rpc.get_code_no_retry(addr_from_last_byte(0x0a), prev_block))
+    let code_0a = block_on(rpc.get_code_no_retry(addr_from_last_byte(0x0a), prev_block))
         .unwrap_or_default();
-    code_0b = block_on(rpc.get_code_no_retry(addr_from_last_byte(0x0b), prev_block))
+    let code_0b = block_on(rpc.get_code_no_retry(addr_from_last_byte(0x0b), prev_block))
         .unwrap_or_default();
-    code_0c = block_on(rpc.get_code_no_retry(addr_from_last_byte(0x0c), prev_block))
+    let code_0c = block_on(rpc.get_code_no_retry(addr_from_last_byte(0x0c), prev_block))
         .unwrap_or_default();
 
     let codes = [
@@ -454,10 +446,9 @@ impl BlockReplayer {
 
     /// Load just the txs for a block (used by CLI to count tx count before replay).
     pub fn load_txs(&self, block_num: u64) -> anyhow::Result<Vec<TxData>> {
-        Ok(self
-            .cache
+        self.cache
             .get_txs(block_num)?
-            .ok_or_else(|| anyhow::anyhow!("Txs for block {} not found in cache", block_num))?)
+            .ok_or_else(|| anyhow::anyhow!("Txs for block {} not found in cache", block_num))
     }
 
     pub fn load_block_data(&self, block_num: u64) -> anyhow::Result<(BlockData, Vec<TxData>)> {
@@ -473,10 +464,9 @@ impl BlockReplayer {
     }
 
     pub fn load_receipts(&self, block_num: u64) -> anyhow::Result<Vec<crate::data::ReceiptData>> {
-        Ok(self
-            .cache
+        self.cache
             .get_receipts(block_num)?
-            .ok_or_else(|| anyhow::anyhow!("Receipts for block {} not found in cache", block_num))?)
+            .ok_or_else(|| anyhow::anyhow!("Receipts for block {} not found in cache", block_num))
     }
 
     fn build_cfg_env(&self, block_num: u64) -> CfgEnv {
@@ -527,7 +517,7 @@ impl BlockReplayer {
                     .iter()
                     .map(|item| AccessListItem {
                         address: item.address,
-                        storage_keys: item.slots.iter().copied().collect(),
+                        storage_keys: item.slots.to_vec(),
                     })
                     .collect(),
             ),
@@ -591,10 +581,10 @@ impl BlockReplayer {
                 if l.address != r.address {
                     mismatches.push(format!("log[{}].address", i));
                 }
-                if !l.data.topics().is_empty() && !r.topics.is_empty() {
-                    if l.data.topics()[0] != r.topics[0] {
-                        mismatches.push(format!("log[{}].topic[0]", i));
-                    }
+                if !l.data.topics().is_empty() && !r.topics.is_empty()
+                    && l.data.topics()[0] != r.topics[0]
+                {
+                    mismatches.push(format!("log[{}].topic[0]", i));
                 }
             }
         }
@@ -947,7 +937,7 @@ impl BlockReplayer {
                         })
                         .unwrap_or_default(),
                     output: Bytes::new(),
-                    error: receipt.and_then(|_| None).or(Some("skipped".to_string())),
+                    error: Some("skipped".to_string()),
                 }
             };
 

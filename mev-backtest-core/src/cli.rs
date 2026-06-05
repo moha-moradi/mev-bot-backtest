@@ -35,7 +35,7 @@ pub enum Command {
     /// Print the fully resolved config as TOML
     Config,
 
-    /// Replay a specific block for debugging (not yet implemented)
+    /// Replay a specific block for debugging
     Replay(ReplayArgs),
 
 }
