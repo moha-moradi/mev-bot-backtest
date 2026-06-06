@@ -4,6 +4,7 @@ use alloy::primitives::{Address, Bytes, U256};
 use serde::{Deserialize, Serialize};
 
 use crate::data::{AccountData, BlockData, ReceiptData, TxData};
+use crate::pool::state::PoolInfo;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunManifest {
@@ -185,6 +186,64 @@ impl CacheStore {
             None => Ok(None),
         }
     }
+
+    /// List all stored run manifests with their run IDs.
+    pub fn list_manifests(&self) -> anyhow::Result<Vec<(String, RunManifest)>> {
+        let prefix = "manifest:";
+        let mut results = Vec::new();
+        for entry in self.db.scan_prefix(prefix.as_bytes()) {
+            let (key, value) = entry?;
+            let key_str = String::from_utf8_lossy(&key).to_string();
+            if let Some(run_id) = key_str.strip_prefix(prefix) {
+                if let Ok(manifest) = Self::decode::<RunManifest>(&value) {
+                    results.push((run_id.to_string(), manifest));
+                }
+            }
+        }
+        results.sort_by(|a, b| b.1.resolved_at.cmp(&a.1.resolved_at));
+        Ok(results)
+    }
+
+    // ---- Pool Discovery ----
+    pub fn put_discovered_pool(&self, pool: &PoolInfo) -> anyhow::Result<()> {
+        let key = format!("discovery:{}:pool:{}", self.chain_id, pool.address);
+        self.db.insert(key, Self::encode(pool)?)?;
+        Ok(())
+    }
+
+    pub fn get_discovered_pool(&self, address: &Address) -> anyhow::Result<Option<PoolInfo>> {
+        let key = format!("discovery:{}:pool:{}", self.chain_id, address);
+        match self.db.get(&key)? {
+            Some(bytes) => Ok(Some(Self::decode(&bytes)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn list_discovered_pools(&self) -> anyhow::Result<Vec<PoolInfo>> {
+        let prefix = format!("discovery:{}:pool:", self.chain_id);
+        let mut pools = Vec::new();
+        for entry in self.db.scan_prefix(prefix.as_bytes()) {
+            let (_, value) = entry?;
+            if let Ok(pool) = Self::decode::<PoolInfo>(&value) {
+                pools.push(pool);
+            }
+        }
+        Ok(pools)
+    }
+
+    pub fn put_discovery_cursor(&self, factory: &Address, block: u64) -> anyhow::Result<()> {
+        let key = format!("discovery:{}:cursor:{}", self.chain_id, factory);
+        self.db.insert(key, Self::encode(&block)?)?;
+        Ok(())
+    }
+
+    pub fn get_discovery_cursor(&self, factory: &Address) -> anyhow::Result<Option<u64>> {
+        let key = format!("discovery:{}:cursor:{}", self.chain_id, factory);
+        match self.db.get(&key)? {
+            Some(bytes) => Ok(Some(Self::decode(&bytes)?)),
+            None => Ok(None),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -192,6 +251,7 @@ mod tests {
     use super::*;
     use alloy::primitives::{address, B256, U256};
     use crate::data::{AccountData, BlockData, ReceiptData, TxData};
+    use crate::pool::dex_type::DexType;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static CACHE_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -339,5 +399,57 @@ mod tests {
         assert_eq!(fetched.run_id, "test-run-1");
         assert_eq!(fetched.start_block, 1);
         assert_eq!(fetched.end_block, 100);
+    }
+
+    #[test]
+    fn test_discovered_pool_roundtrip() {
+        let cache = temp_cache();
+        let pool = PoolInfo {
+            address: address!("cafe000000000000000000000000000000000001"),
+            token0: address!("aaaa0000000000000000000000000000000000aa"),
+            token1: address!("bbbb0000000000000000000000000000000000bb"),
+            fee: 3000,
+            name: None,
+            dex_type: DexType::UniswapV2,
+            tick_spacing: None,
+        };
+        cache.put_discovered_pool(&pool).unwrap();
+        let fetched = cache.get_discovered_pool(&pool.address).unwrap().unwrap();
+        assert_eq!(fetched.address, pool.address);
+        assert_eq!(fetched.dex_type, DexType::UniswapV2);
+        let all = cache.list_discovered_pools().unwrap();
+        assert_eq!(all.len(), 1);
+    }
+
+    #[test]
+    fn test_discovery_cursor_roundtrip() {
+        let cache = temp_cache();
+        let factory = Address::from_slice(&[0xfa; 20]);
+        assert!(cache.get_discovery_cursor(&factory).unwrap().is_none());
+        cache.put_discovery_cursor(&factory, 42_000_000).unwrap();
+        let cursor = cache.get_discovery_cursor(&factory).unwrap().unwrap();
+        assert_eq!(cursor, 42_000_000);
+    }
+
+    #[test]
+    fn test_discovery_namespaced_by_chain() {
+        let dir_a = std::env::temp_dir().join("disc_test_a");
+        let dir_b = std::env::temp_dir().join("disc_test_b");
+        let _ = std::fs::remove_dir_all(&dir_a);
+        let _ = std::fs::remove_dir_all(&dir_b);
+        let cache_a = CacheStore::open(&dir_a, 137).unwrap();
+        let cache_b = CacheStore::open(&dir_b, 31337).unwrap();
+        let pool = PoolInfo {
+            address: address!("cafe000000000000000000000000000000000002"),
+            token0: Address::ZERO,
+            token1: Address::ZERO,
+            fee: 0,
+            name: None,
+            dex_type: DexType::UniswapV2,
+            tick_spacing: None,
+        };
+        cache_a.put_discovered_pool(&pool).unwrap();
+        assert_eq!(cache_b.list_discovered_pools().unwrap().len(), 0);
+        assert_eq!(cache_a.list_discovered_pools().unwrap().len(), 1);
     }
 }

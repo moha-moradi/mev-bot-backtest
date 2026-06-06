@@ -1,0 +1,87 @@
+# ─────────────────────────────────────────────────────────────
+# MEV Backtest Engine — Example Configuration
+# Copy this to mev-backtest.toml and edit as needed.
+# All fields shown; any omitted field uses its default value.
+# ─────────────────────────────────────────────────────────────
+
+# Chain selection (default: "polygon")
+chain = "polygon"
+
+# Optional RPC URL override (falls back to public node for the chain)
+rpc_url = "https://polygon-bor.publicnode.com"
+
+# Flash loan provider: auto, balancer, aave, uniswap
+flash_loan_provider = "auto"
+
+# Strategies: comma-separated or "all"
+strategies = "all"
+
+# Gas model: historical_exact, p90, fixed
+gas_model = "historical_exact"
+
+# Priority fee premium in gwei
+priority_fee = 1.0
+
+# Coinbase bribe percentage (0-100)
+coinbase_bribe = 10
+
+# Minimum profit in USD
+min_profit_usd = 0.0
+
+# Output format: table, csv, json
+output = "table"
+
+# Export directory
+export_path = "./results"
+
+# Cache directory (sled database)
+cache_dir = "./cache"
+
+# Fast mode (skip token widening in tx filter)
+fast_mode = false
+
+# Gas limit for arb cost estimation
+gas_limit = 200000
+
+# ─────────────────────────────────────────────────────────────
+# Per-chain configurations
+# ─────────────────────────────────────────────────────────────
+[chains.polygon]
+chain_id = 137
+balancer_vault = "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
+aave_v3_pool = "0x794a61358D6845594F94dc1DB02A252b5b4814aD"
+uniswap_v3_factory = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+pools_registry_path = "./pools/polygon.json"
+
+# On-chain pool discovery (V2 factories)
+uniswap_v2_factories = [
+    "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",  # QuickSwap
+    "0x9e5A52f57b3038F1B8EeE45F28b3C1960e1fC6b",   # SushiSwap
+]
+
+# Enable pool discovery: scan from this block (inclusive)
+# pool_discovery_start_block = 0
+
+# Batch size for each eth_getLogs request (default: 50000)
+# pool_discovery_batch_size = 100000
+
+# ─────────────────────────────────────────────────────────────
+# Ethereum example (with factory discovery config)
+# ─────────────────────────────────────────────────────────────
+[chains.ethereum]
+chain_id = 1
+balancer_vault = "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
+aave_v3_pool = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
+uniswap_v3_factory = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+pools_registry_path = "./pools/ethereum.json"
+
+# Multiple V2 factories for discovery
+uniswap_v2_factories = [
+    "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",  # Uniswap V2
+    "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac",  # SushiSwap
+]
+
+# Start scanning from block 0 (be careful — Ethereum has >22M blocks)
+# Consider setting a recent block to avoid scanning the entire chain
+pool_discovery_start_block = 15000000
+pool_discovery_batch_size = 50000

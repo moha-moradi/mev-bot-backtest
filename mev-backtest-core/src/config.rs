@@ -24,6 +24,9 @@ pub struct ChainConfig {
     /// Block number to start pool discovery scan from (default: genesis)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pool_discovery_start_block: Option<u64>,
+    /// Batch size (blocks) for each eth_getLogs request during pool discovery (default: 50000)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pool_discovery_batch_size: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,6 +144,7 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             pools_registry_path: Some("./pools/polygon.json".to_string()),
             uniswap_v2_factories: Some(polygon_factories),
             pool_discovery_start_block: None,
+            pool_discovery_batch_size: None,
         },
     );
     let avalanche_factories = vec![
@@ -156,6 +160,7 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             pools_registry_path: Some("./pools/avalanche.json".to_string()),
             uniswap_v2_factories: Some(avalanche_factories),
             pool_discovery_start_block: None,
+            pool_discovery_batch_size: None,
         },
     );
     let bsc_factories = vec![
@@ -172,6 +177,7 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             pools_registry_path: Some("./pools/bsc.json".to_string()),
             uniswap_v2_factories: Some(bsc_factories),
             pool_discovery_start_block: None,
+            pool_discovery_batch_size: None,
         },
     );
     m.insert(
@@ -184,6 +190,7 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             pools_registry_path: Some("./pools/arbitrum.json".to_string()),
             uniswap_v2_factories: None,
             pool_discovery_start_block: None,
+            pool_discovery_batch_size: None,
         },
     );
     let base_factories = vec![
@@ -199,6 +206,7 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             pools_registry_path: Some("./pools/base.json".to_string()),
             uniswap_v2_factories: Some(base_factories),
             pool_discovery_start_block: None,
+            pool_discovery_batch_size: None,
         },
     );
     let ethereum_factories = vec![
@@ -216,6 +224,7 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             pools_registry_path: Some("./pools/ethereum.json".to_string()),
             uniswap_v2_factories: Some(ethereum_factories),
             pool_discovery_start_block: None,
+            pool_discovery_batch_size: None,
         },
     );
     let optimism_factories = vec![
@@ -231,6 +240,7 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             pools_registry_path: Some("./pools/optimism.json".to_string()),
             uniswap_v2_factories: Some(optimism_factories),
             pool_discovery_start_block: None,
+            pool_discovery_batch_size: None,
         },
     );
     m

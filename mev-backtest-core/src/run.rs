@@ -1,9 +1,10 @@
 use std::cell::RefCell;
 
+use crate::cache::CacheStore;
 use crate::mev::opportunity::MevOpportunity;
 use crate::mev::two_hop::TwoHopArbDetector;
 use crate::pool::registry::PoolRegistry;
-use crate::pool::state::{PoolManager, PoolState, UniswapV2PoolState};
+use crate::pool::state::{PoolInfo, PoolManager, PoolState, UniswapV2PoolState};
 use crate::replay::BlockReplayer;
 use crate::resolver::ResolvedRange;
 use crate::rpc::RpcClient;
@@ -25,53 +26,43 @@ impl BacktestRunner {
         }
     }
 
-    /// Initialize pool manager by loading registry and fetching on-chain reserves.
+    /// Initialize pool manager by loading registry + discovered pools and fetching on-chain reserves.
     pub async fn init_pools(
         pool_manager: &mut PoolManager,
         registry_path: Option<&str>,
         rpc: &RpcClient,
         block_num: u64,
+        cache: Option<&CacheStore>,
     ) {
-        let pool_infos = PoolRegistry::load_optional(registry_path);
-        if pool_infos.is_empty() {
-            tracing::warn!("No pools loaded from registry, skipping TwoHopArb detection");
-            return;
+        // 1. Load pools from JSON registry
+        let registry_pools = PoolRegistry::load_optional(registry_path);
+        tracing::info!("Loaded {} pools from registry", registry_pools.len());
+
+        // 2. Load discovered pools from sled cache (if available)
+        let mut discovered_pools = Vec::new();
+        if let Some(cache) = cache {
+            match cache.list_discovered_pools() {
+                Ok(pools) => discovered_pools = pools,
+                Err(e) => tracing::warn!("Failed to list discovered pools: {}", e),
+            }
+        }
+        tracing::info!("Loaded {} discovered pools from cache", discovered_pools.len());
+
+        // 3. Merge: registry pools take precedence over discovered pools
+        let mut seen = std::collections::HashSet::new();
+        for info in &registry_pools {
+            seen.insert(info.address);
+            add_pool_to_manager(pool_manager, info.clone());
+        }
+        for info in &discovered_pools {
+            if seen.insert(info.address) {
+                add_pool_to_manager(pool_manager, info.clone());
+            }
         }
 
-        tracing::info!("Loading {} pools from registry", pool_infos.len());
-
-        for info in &pool_infos {
-            match info.dex_type {
-                crate::pool::dex_type::DexType::UniswapV2 => {
-                    pool_manager.add_pool(PoolState::UniswapV2(UniswapV2PoolState {
-                        info: info.clone(),
-                        reserve0: 0,
-                        reserve1: 0,
-                    }));
-                }
-                crate::pool::dex_type::DexType::UniswapV3 => {
-                    pool_manager.add_pool(PoolState::UniswapV3(
-                        crate::pool::state::UniswapV3PoolState::new(info.clone()),
-                    ));
-                }
-                crate::pool::dex_type::DexType::Curve => {
-                    pool_manager.add_pool(PoolState::Curve(crate::pool::state::CurvePoolState {
-                        info: info.clone(),
-                        balances: vec![],
-                        token_index: std::collections::HashMap::new(),
-                    }));
-                }
-                crate::pool::dex_type::DexType::Balancer => {
-                    pool_manager.add_pool(PoolState::Balancer(
-                        crate::pool::state::BalancerPoolState {
-                            info: info.clone(),
-                            balances: vec![],
-                            token_index: std::collections::HashMap::new(),
-                            pool_id: None,
-                        },
-                    ));
-                }
-            }
+        if pool_manager.pool_count() == 0 {
+            tracing::warn!("No pools loaded, skipping TwoHopArb detection");
+            return;
         }
 
         tracing::info!(
@@ -170,5 +161,39 @@ impl BacktestRunner {
             }
         }
         Ok(all)
+    }
+}
+
+fn add_pool_to_manager(pool_manager: &mut PoolManager, info: PoolInfo) {
+    match info.dex_type {
+        crate::pool::dex_type::DexType::UniswapV2 => {
+            pool_manager.add_pool(PoolState::UniswapV2(UniswapV2PoolState {
+                info,
+                reserve0: 0,
+                reserve1: 0,
+            }));
+        }
+        crate::pool::dex_type::DexType::UniswapV3 => {
+            pool_manager.add_pool(PoolState::UniswapV3(
+                crate::pool::state::UniswapV3PoolState::new(info),
+            ));
+        }
+        crate::pool::dex_type::DexType::Curve => {
+            pool_manager.add_pool(PoolState::Curve(crate::pool::state::CurvePoolState {
+                info,
+                balances: vec![],
+                token_index: std::collections::HashMap::new(),
+            }));
+        }
+        crate::pool::dex_type::DexType::Balancer => {
+            pool_manager.add_pool(PoolState::Balancer(
+                crate::pool::state::BalancerPoolState {
+                    info,
+                    balances: vec![],
+                    token_index: std::collections::HashMap::new(),
+                    pool_id: None,
+                },
+            ));
+        }
     }
 }

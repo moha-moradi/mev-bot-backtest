@@ -15,7 +15,9 @@ use mev_backtest_core::pool::state::PoolManager;
 use mev_backtest_core::replay::BlockReplayer;
 use mev_backtest_core::resolver::RangeResolver;
 use mev_backtest_core::rpc::RpcClient;
+use mev_backtest_core::mev::opportunity::ResultsFile;
 use mev_backtest_core::run::BacktestRunner;
+use mev_backtest_core::types::OutputFormat;
 use mev_backtest_core::validation;
 
 fn setup_logging(verbose: bool, quiet: bool) {
@@ -81,7 +83,22 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             export_path: None,
             cache_dir: Some(args.cache_dir.clone()),
         },
-        Command::Report | Command::Config => CliOverrides {
+        Command::Report(args) => CliOverrides {
+            days: None,
+            blocks: None,
+            block: None,
+            from_block: None,
+            to_block: None,
+            chain: None,
+            rpc_url: None,
+            flash_loan_provider: None,
+            strategies: None,
+            gas_model: None,
+            output: Some(args.output.clone()),
+            export_path: Some(args.export_path.clone()),
+            cache_dir: None,
+        },
+        Command::Config => CliOverrides {
             days: None,
             blocks: None,
             block: None,
@@ -95,6 +112,21 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             output: None,
             export_path: None,
             cache_dir: None,
+        },
+        Command::Discover(args) => CliOverrides {
+            days: None,
+            blocks: None,
+            block: None,
+            from_block: Some(args.from_block),
+            to_block: Some(args.to_block),
+            chain: Some(args.chain_args.chain.clone()),
+            rpc_url: args.chain_args.rpc_url.clone(),
+            flash_loan_provider: None,
+            strategies: None,
+            gas_model: None,
+            output: None,
+            export_path: None,
+            cache_dir: Some(args.cache_dir.clone()),
         },
     }
 }
@@ -122,6 +154,41 @@ fn print_startup_plan(result: &validation::ValidationResult, config: &mev_backte
 
     println!("  [DRY RUN — no simulation yet]");
     println!();
+}
+
+fn save_results_json(
+    export_path: &str,
+    run_id: &str,
+    results_file: &ResultsFile,
+) -> anyhow::Result<()> {
+    let dir = std::path::Path::new(export_path);
+    std::fs::create_dir_all(dir)?;
+    let path = dir.join(format!("{}.json", run_id));
+    let json = serde_json::to_string_pretty(results_file)?;
+    std::fs::write(&path, json)?;
+    println!("Results saved to {}", path.display());
+    Ok(())
+}
+
+fn render_results_table(all_opportunities: &[mev_backtest_core::mev::opportunity::MevOpportunity]) {
+    let mut table = Table::new();
+    table.set_header(vec![
+        "Block", "Tx", "Strategy",
+        "Input", "Profit (token_out)", "Gas (wei)",
+    ]);
+
+    for opp in all_opportunities {
+        table.add_row(vec![
+            format!("{}", opp.block_number),
+            format!("{}", opp.tx_index),
+            format!("{}", opp.strategy),
+            format!("{}", opp.input_amount),
+            format!("{}", opp.expected_profit),
+            format!("{}", opp.gas_cost_wei),
+        ]);
+    }
+
+    println!("{table}");
 }
 
 #[tokio::main]
@@ -163,6 +230,34 @@ async fn main() -> anyhow::Result<()> {
                 }
             };
 
+            // Run pool discovery if configured
+            if let Some(start_block) = validation_result.chain_config.pool_discovery_start_block {
+                let mut v2_addrs = Vec::new();
+                if let Some(factories) = &validation_result.chain_config.uniswap_v2_factories {
+                    for s in factories {
+                        if let Ok(addr) = s.parse::<alloy::primitives::Address>() {
+                            v2_addrs.push(addr);
+                        }
+                    }
+                }
+                let mut v3_addrs = Vec::new();
+                if let Some(factory) = &validation_result.chain_config.uniswap_v3_factory {
+                    if let Ok(addr) = factory.parse::<alloy::primitives::Address>() {
+                        v3_addrs.push(addr);
+                    }
+                }
+                let batch_size = validation_result.chain_config.pool_discovery_batch_size.unwrap_or(50_000);
+                if !v2_addrs.is_empty() || !v3_addrs.is_empty() {
+                    let discovered = mev_backtest_core::pool::discovery::discover_pools(
+                        &rpc, &cache, &v2_addrs, &v3_addrs, start_block,
+                        resolved.start_block.saturating_sub(1), batch_size,
+                    ).await?;
+                    if discovered > 0 {
+                        tracing::info!("Discovered {} new pools", discovered);
+                    }
+                }
+            }
+
             let run_id = format!(
                 "run_{}",
                 SystemTime::now()
@@ -190,15 +285,7 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", resolved.summary());
             println!();
 
-            // Build replayer
-            let replayer = BlockReplayer::new(
-                tokio::runtime::Handle::current(),
-                cache,
-                rpc.clone(),
-                validation_result.chain_config.chain_id,
-            );
-
-            // Init pool manager
+            // Init pool manager (needs cache before it's moved into replayer)
             let mut pool_manager = PoolManager::new();
             let prev_block = resolved.start_block.saturating_sub(1);
             let registry_path = validation_result.chain_config.pools_registry_path.as_deref();
@@ -208,14 +295,44 @@ async fn main() -> anyhow::Result<()> {
                     registry_path,
                     &rpc,
                     prev_block,
+                    Some(&cache),
                 ).await;
             }
+
+            // Build replayer (takes ownership of cache)
+            let replayer = BlockReplayer::new(
+                tokio::runtime::Handle::current(),
+                cache,
+                rpc.clone(),
+                validation_result.chain_config.chain_id,
+            );
 
             // Run backtest
             let mut runner = BacktestRunner::new(replayer, pool_manager);
             let start = std::time::Instant::now();
             let all_opportunities = runner.run_range(&resolved)?;
             let elapsed = start.elapsed();
+
+            // Save results to JSON
+            let created_at = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let results_file = ResultsFile {
+                run_id: run_id.clone(),
+                chain: validation_result.chain_name.to_string(),
+                start_block: resolved.start_block,
+                end_block: resolved.end_block,
+                range_mode: resolved.mode_string(),
+                strategies: manifest.strategies.clone(),
+                flash_loan_provider: manifest.flash_loan_provider.clone(),
+                resolved_at: manifest.resolved_at,
+                created_at,
+                opportunities: all_opportunities.clone(),
+            };
+            if let Err(e) = save_results_json(&config.export_path, &run_id, &results_file) {
+                tracing::warn!("Failed to save results: {}", e);
+            }
 
             // Print results
             if all_opportunities.is_empty() {
@@ -226,25 +343,7 @@ async fn main() -> anyhow::Result<()> {
                     all_opportunities.len(),
                     elapsed.as_secs_f64()
                 );
-
-                let mut table = Table::new();
-                table.set_header(vec![
-                    "Block", "Tx", "Strategy",
-                    "Input", "Profit (token_out)", "Gas (wei)",
-                ]);
-
-                for opp in &all_opportunities {
-                    table.add_row(vec![
-                        format!("{}", opp.block_number),
-                        format!("{}", opp.tx_index),
-                        format!("{}", opp.strategy),
-                        format!("{}", opp.input_amount),
-                        format!("{}", opp.expected_profit),
-                        format!("{}", opp.gas_cost_wei),
-                    ]);
-                }
-
-                println!("{table}");
+                render_results_table(&all_opportunities);
             }
         }
         Command::Fetch(_) => {
@@ -328,8 +427,92 @@ async fn main() -> anyhow::Result<()> {
                 println!("  Refetched:    {}", refetched);
             }
         }
-        Command::Report => {
-            println!("report subcommand — not yet implemented");
+        Command::Report(args) => {
+            let export_path = args.export_path.as_str();
+            let dir = std::path::Path::new(export_path);
+
+            // Determine which run to load
+            let run_id = match &args.run_id {
+                Some(id) => id.clone(),
+                None => {
+                    // Find the latest results file
+                    if !dir.exists() {
+                        eprintln!("Error: export directory '{}' does not exist.", export_path);
+                        std::process::exit(1);
+                    }
+                    let mut entries: Vec<_> = std::fs::read_dir(dir)
+                        .unwrap_or_else(|e| {
+                            eprintln!("Error reading export directory: {}", e);
+                            std::process::exit(1);
+                        })
+                        .filter_map(|e| e.ok())
+                        .filter(|e| {
+                            e.path().extension().map(|ext| ext == "json").unwrap_or(false)
+                        })
+                        .collect();
+                    entries.sort_by_key(|e| e.path().metadata().ok().and_then(|m| m.created().ok()));
+                    match entries.last() {
+                        Some(entry) => {
+                            let stem = entry.path().file_stem().unwrap().to_string_lossy().to_string();
+                            stem
+                        }
+                        None => {
+                            eprintln!("No results files found in '{}'", export_path);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+            };
+
+            let path = dir.join(format!("{}.json", run_id));
+            if !path.exists() {
+                eprintln!("Error: results file not found: {}", path.display());
+                std::process::exit(1);
+            }
+
+            let json_str = std::fs::read_to_string(&path)
+                .map_err(|e| anyhow::anyhow!("Failed to read '{}': {}", path.display(), e))?;
+            let results_file: ResultsFile = serde_json::from_str(&json_str)
+                .map_err(|e| anyhow::anyhow!("Failed to parse '{}': {}", path.display(), e))?;
+
+            let output_format: OutputFormat = args.output.parse().unwrap_or(OutputFormat::Table);
+
+            match output_format {
+                OutputFormat::Table => {
+                    println!();
+                    println!("  Run ID:        {}", results_file.run_id);
+                    println!("  Chain:         {}", results_file.chain);
+                    println!("  Block range:   {}–{}", results_file.start_block, results_file.end_block);
+                    println!("  Mode:          {}", results_file.range_mode);
+                    println!("  Strategies:    {}", results_file.strategies.join(", "));
+                    println!("  Flash loan:    {}", results_file.flash_loan_provider);
+                    println!("  Opportunities: {}", results_file.opportunities.len());
+                    println!();
+
+                    if results_file.opportunities.is_empty() {
+                        println!("No MEV opportunities in this run.");
+                    } else {
+                        render_results_table(&results_file.opportunities);
+                    }
+                }
+                OutputFormat::Csv => {
+                    println!("block_number,tx_index,strategy,input_amount,expected_profit,gas_cost_wei");
+                    for opp in &results_file.opportunities {
+                        println!(
+                            "{},{},{},{},{},{}",
+                            opp.block_number,
+                            opp.tx_index,
+                            opp.strategy,
+                            opp.input_amount,
+                            opp.expected_profit,
+                            opp.gas_cost_wei,
+                        );
+                    }
+                }
+                OutputFormat::Json => {
+                    println!("{}", serde_json::to_string_pretty(&results_file)?);
+                }
+            }
         }
         Command::Config => {
             let toml_str = config.to_toml_string()?;
@@ -426,6 +609,129 @@ async fn main() -> anyhow::Result<()> {
                     "Receipt match rate {:.1}% is below 99% threshold",
                     pct
                 );
+            }
+        }
+        Command::Discover(args) => {
+            use alloy::primitives::Address;
+            use mev_backtest_core::pool::discovery::{discover_v2_pools, discover_v3_pools};
+            use mev_backtest_core::types::ChainName;
+
+            let chain_name: ChainName = match args.chain_args.chain.parse() {
+                Ok(c) => c,
+                Err(_) => {
+                    eprintln!("Error: unknown chain '{}'", args.chain_args.chain);
+                    std::process::exit(1);
+                }
+            };
+            let rpc_url = config.effective_rpc_url(chain_name);
+            let chain_config = config.chains.get(&args.chain_args.chain);
+            let chain_id = chain_config.map(|c| c.chain_id).unwrap_or(1);
+            let rpc = RpcClient::new(&rpc_url, chain_id)?;
+
+            let mut v2_addrs = Vec::new();
+            if let Some(v2_str) = &args.v2_factories {
+                for s in v2_str.split(',') {
+                    if let Ok(addr) = s.trim().parse::<Address>() {
+                        v2_addrs.push(addr);
+                    }
+                }
+            }
+            let mut v3_addrs = Vec::new();
+            if let Some(v3_str) = &args.v3_factory {
+                if let Ok(addr) = v3_str.trim().parse::<Address>() {
+                    v3_addrs.push(addr);
+                }
+            }
+
+            if v2_addrs.is_empty() && v3_addrs.is_empty() {
+                eprintln!("Error: at least one of --v2-factories or --v3-factory is required");
+                std::process::exit(1);
+            }
+
+            let from = args.from_block;
+            let to = args.to_block;
+            let batch_size = args.batch_size;
+
+            println!();
+            println!("  Pool Discovery");
+            println!("  Chain:       {}", args.chain_args.chain);
+            println!("  Block range: {}–{}", from, to);
+            println!("  V2 factories: {}", v2_addrs.len());
+            println!("  V3 factories: {}", v3_addrs.len());
+            if args.save {
+                println!("  Save to cache: yes");
+            }
+            println!();
+
+            let mut all_pools = Vec::new();
+
+            // V2 discovery batched
+            for &factory in &v2_addrs {
+                let mut current = from;
+                while current <= to {
+                    let end = (current + batch_size - 1).min(to);
+                    match discover_v2_pools(&rpc, factory, current, end).await {
+                        Ok(pools) => {
+                            for p in &pools {
+                                println!(
+                                    "  V2  {}  token0={}  token1={}",
+                                    p.address, p.token0, p.token1
+                                );
+                            }
+                            all_pools.extend(pools);
+                        }
+                        Err(e) => {
+                            eprintln!("  Error scanning V2 factory {factory} blocks {current}..{end}: {e}");
+                        }
+                    }
+                    if end == to { break; }
+                    current = end + 1;
+                }
+            }
+
+            // V3 discovery batched
+            for &factory in &v3_addrs {
+                let mut current = from;
+                while current <= to {
+                    let end = (current + batch_size - 1).min(to);
+                    match discover_v3_pools(&rpc, factory, current, end).await {
+                        Ok(pools) => {
+                            for p in &pools {
+                                println!(
+                                    "  V3  {}  token0={}  token1={}  fee={}  tickSpacing={}",
+                                    p.address, p.token0, p.token1, p.fee,
+                                    p.tick_spacing.unwrap_or(0),
+                                );
+                            }
+                            all_pools.extend(pools);
+                        }
+                        Err(e) => {
+                            eprintln!("  Error scanning V3 factory {factory} blocks {current}..{end}: {e}");
+                        }
+                    }
+                    if end == to { break; }
+                    current = end + 1;
+                }
+            }
+
+            println!();
+            println!("  Found {} pool(s)", all_pools.len());
+
+            // Save to cache if requested
+            if args.save {
+                let cache = CacheStore::open(&args.cache_dir, chain_id)?;
+                for pool in &all_pools {
+                    let info: mev_backtest_core::pool::state::PoolInfo = pool.clone().into();
+                    let _ = cache.put_discovered_pool(&info);
+                }
+                // Save cursors
+                for &factory in &v2_addrs {
+                    let _ = cache.put_discovery_cursor(&factory, to);
+                }
+                for &factory in &v3_addrs {
+                    let _ = cache.put_discovery_cursor(&factory, to);
+                }
+                println!("  Saved to cache: {}", args.cache_dir);
             }
         }
     }

@@ -882,7 +882,10 @@ mod tests {
     }
 
     fn make_v3_swap_log(pool: Address, sqrt: U256, liq: u128, tick: i32) -> ExecutedLog {
-        let mut data = Vec::with_capacity(96);
+        let mut data = Vec::with_capacity(160);
+        // amount0 and amount1 come before sqrt/liq/tick in the V3 Swap event data
+        data.extend_from_slice(&[0u8; 32]); // amount0
+        data.extend_from_slice(&[0u8; 32]); // amount1
         let mut b = [0u8; 32];
         b.copy_from_slice(&sqrt.to_be_bytes::<32>());
         data.extend_from_slice(&b);

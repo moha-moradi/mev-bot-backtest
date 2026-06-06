@@ -61,16 +61,17 @@ pub fn decode_v3_swap(log: &ExecutedLog) -> Option<V3SwapDecoded> {
     if log.topics.is_empty() || log.topics[0] != V3_SWAP_TOPIC {
         return None;
     }
-    // data: uint160 sqrtPriceX96 (32), uint128 liquidity (32), int24 tick (32, right-aligned)
     // topics: sender, recipient
-    if log.data.len() < 96 {
+    // data: int256 amount0 (32), int256 amount1 (32), uint160 sqrtPriceX96 (32),
+    //       uint128 liquidity (32), int24 tick (32)
+    if log.data.len() < 160 {
         return None;
     }
-    let sqrt_price_x96 = U256::from_be_slice(&log.data[..32]);
-    let liquidity = u128_from_be_bytes_32(&log.data[32..64]);
+    let sqrt_price_x96 = U256::from_be_slice(&log.data[64..96]);
+    let liquidity = u128_from_be_bytes_32(&log.data[96..128]);
 
     // tick is int24, stored right-aligned in 32 bytes
-    let tick_bytes: [u8; 32] = log.data[64..96].try_into().ok()?;
+    let tick_bytes: [u8; 32] = log.data[128..160].try_into().ok()?;
     let tick = i32::from_be_bytes([
         tick_bytes[28],
         tick_bytes[29],
@@ -198,7 +199,9 @@ mod tests {
     use super::*;
 
     fn make_v3_swap_log(sqrt: U256, liq: u128, t: i32) -> ExecutedLog {
-        let mut data = Vec::with_capacity(96);
+        let mut data = Vec::with_capacity(160);
+        data.extend_from_slice(&[0u8; 32]);
+        data.extend_from_slice(&[0u8; 32]);
         let mut b = [0u8; 32];
         b.copy_from_slice(&sqrt.to_be_bytes::<32>());
         data.extend_from_slice(&b);

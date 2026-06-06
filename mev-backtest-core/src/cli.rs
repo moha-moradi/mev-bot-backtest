@@ -30,13 +30,17 @@ pub enum Command {
     Fetch(FetchArgs),
 
     /// Re-render terminal tables from saved JSON
-    Report,
+    Report(ReportArgs),
 
     /// Print the fully resolved config as TOML
     Config,
 
     /// Replay a specific block for debugging
     Replay(ReplayArgs),
+
+    /// Discover pools from factory events via the RPC endpoint.
+    /// Found pools are printed to stdout and optionally saved to the sled cache.
+    Discover(DiscoverArgs),
 
 }
 
@@ -132,6 +136,55 @@ pub struct ReplayArgs {
     pub chain_args: ChainArgs,
 
     /// Block/state cache directory
+    #[arg(long, default_value = "./cache", value_name = "PATH")]
+    pub cache_dir: String,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct ReportArgs {
+    /// Specific run ID to report (default: latest)
+    #[arg(long, value_name = "ID")]
+    pub run_id: Option<String>,
+
+    /// Output format: table, csv, json
+    #[arg(long, default_value = "table", value_name = "FORMAT")]
+    pub output: String,
+
+    /// Directory where result files are stored
+    #[arg(long, default_value = "./results", value_name = "PATH")]
+    pub export_path: String,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct DiscoverArgs {
+    #[command(flatten)]
+    pub chain_args: ChainArgs,
+
+    /// Uniswap V2 factory addresses (comma-separated)
+    #[arg(long, value_name = "ADDRS")]
+    pub v2_factories: Option<String>,
+
+    /// Uniswap V3 factory address
+    #[arg(long, value_name = "ADDR")]
+    pub v3_factory: Option<String>,
+
+    /// Start block for discovery scan
+    #[arg(long, value_name = "NUMBER")]
+    pub from_block: u64,
+
+    /// End block for discovery scan (inclusive)
+    #[arg(long, value_name = "NUMBER")]
+    pub to_block: u64,
+
+    /// Batch size for each getLogs request
+    #[arg(long, default_value = "50000", value_name = "NUMBER")]
+    pub batch_size: u64,
+
+    /// Save discovered pools to the sled cache
+    #[arg(long)]
+    pub save: bool,
+
+    /// Block/state cache directory (used when --save is set)
     #[arg(long, default_value = "./cache", value_name = "PATH")]
     pub cache_dir: String,
 }

@@ -184,6 +184,37 @@ mev-backtest report
 
 *Not yet implemented.*
 
+#### `discover` — On-chain pool discovery
+
+```bash
+mev-backtest discover [OPTIONS] --from-block <N> --to-block <N>
+```
+
+Scans factory contract events (`PairCreated` / `PoolCreated`) to discover liquidity pools directly from the chain.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-n, --chain <NAME>` | `polygon` | Chain name |
+| `-r, --rpc <URL>` | Public node | Archive node RPC URL |
+| `--v2-factories <ADDRS>` | — | Comma-separated Uniswap V2 factory addresses |
+| `--v3-factory <ADDR>` | — | Uniswap V3 factory address |
+| `--from-block <N>` | (required) | Start block for scanning |
+| `--to-block <N>` | (required) | End block for scanning |
+| `--batch-size <N>` | `50000` | Block range per `eth_getLogs` request |
+| `--save` | off | Save discovered pools to the sled cache |
+| `--cache-dir <PATH>` | `./cache` | Cache directory (used with `--save`) |
+
+```bash
+# Discover V2 pools on Ethereum: QuickSwap factory, blocks 15M–16M
+mev-backtest discover -n ethereum --v2-factories "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f" --from-block 15000000 --to-block 16000000
+
+# Discover V2+V3 pools and save to cache
+mev-backtest discover -n polygon \
+  --v2-factories "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32,0x9e5A52f57b3038F1B8EeE45F28b3C1960e1fC6b" \
+  --v3-factory "0x1F98431c8aD98523631AE4a59f267346ea31F984" \
+  --from-block 50000000 --to-block 51000000 --save
+```
+
 ---
 
 ## Configuration
@@ -247,6 +278,12 @@ uniswap_v2_factories = [
     "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",  # QuickSwap
     "0x9e5A52f57b3038F1B8EeE45F28b3C1960e1fC6b",   # SushiSwap
 ]
+
+# Start pool discovery from this block (inclusive). Comment out to disable.
+# pool_discovery_start_block = 0
+
+# Blocks per getLogs request during discovery (default: 50000)
+# pool_discovery_batch_size = 100000
 ```
 
 ### Built-in chain defaults
@@ -353,11 +390,14 @@ Two-tier pricing system:
 
 ### On-Chain Pool Discovery
 
-- Scans Uniswap V2 factory contracts for `PairCreated` events.
-- Processes in chunks of 100,000 blocks.
+- Scans Uniswap V2 factory contracts for `PairCreated` events and V3 factory for `PoolCreated` events.
+- Configurable batch size (`pool_discovery_batch_size`, default 50,000 blocks per `eth_getLogs` request).
 - Saves and resumes cursor position per factory (supports incremental discovery).
 - Deduplicates against existing pools in the registry.
-- Configured via `uniswap_v2_factories` in the chain config.
+- Configured via `uniswap_v2_factories`, `uniswap_v3_factory`, and `pool_discovery_start_block` in chain config.
+- Enable by setting `pool_discovery_start_block` in the chain config. On `run`, the engine scans from that block (or the last saved cursor) to `start_block - 1` before initializing pool reserves.
+- Standalone CLI command: `mev-backtest discover` for ad-hoc discovery with optional `--save` to cache.
+- Discovered pools persist in the sled cache and are loaded on subsequent runs alongside the registry JSON files.
 
 ### Multi-Chain Support
 
