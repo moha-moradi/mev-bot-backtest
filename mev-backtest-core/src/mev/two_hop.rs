@@ -6,9 +6,7 @@ use crate::mev::opportunity::MevOpportunity;
 use crate::pool::math::{constant_product_output_amount, optimal_two_hop_arb, optimal_two_hop_arb_generic, TwoHopArbResult};
 use crate::pool::state::{PoolManager, PoolState, UniswapV2PoolState};
 use crate::pool::v3_quote::quote_v3_exact_in;
-use crate::types::Strategy;
-
-const GAS_LIMIT: u64 = 200_000;
+use crate::types::{GasConfig, Strategy};
 
 /// Detects two-hop arbitrage opportunities across V2, V3, and mixed pools.
 pub struct TwoHopArbDetector;
@@ -21,6 +19,7 @@ impl TwoHopArbDetector {
         tx_index: usize,
         timestamp: u64,
         base_fee_per_gas: u128,
+        gas_config: GasConfig,
     ) -> Vec<MevOpportunity> {
         let mut opportunities = Vec::new();
         let pairs = pool_manager.arbitrage_pairs();
@@ -29,14 +28,14 @@ impl TwoHopArbDetector {
             if let Some(opp) = Self::check_direction(
                 pool_manager, *pool_a, *pool_b, *shared_token,
                 block_number, tx_index, timestamp,
-                base_fee_per_gas,
+                base_fee_per_gas, gas_config,
             ) {
                 opportunities.push(opp);
             }
             if let Some(opp) = Self::check_direction(
                 pool_manager, *pool_b, *pool_a, *shared_token,
                 block_number, tx_index, timestamp,
-                base_fee_per_gas,
+                base_fee_per_gas, gas_config,
             ) {
                 opportunities.push(opp);
             }
@@ -55,6 +54,7 @@ impl TwoHopArbDetector {
         tx_index: usize,
         timestamp: u64,
         base_fee_per_gas: u128,
+        gas_config: GasConfig,
     ) -> Option<MevOpportunity> {
         let pool_a = pm.get(&buy_pool)?;
         let pool_b = pm.get(&sell_pool)?;
@@ -67,7 +67,7 @@ impl TwoHopArbDetector {
             return None;
         }
 
-        let gas_cost_wei = (GAS_LIMIT as u128).saturating_mul(base_fee_per_gas);
+        let gas_cost_wei = gas_config.compute_gas_cost(base_fee_per_gas);
 
         Some(MevOpportunity {
             block_number,
@@ -350,12 +350,16 @@ mod tests {
 
     // ---- TwoHopArbDetector::detect ----
 
+    fn default_gas_config() -> GasConfig {
+        GasConfig::default()
+    }
+
     #[test]
     fn test_detect_finds_arb() {
         let mut pm = PoolManager::new();
         pm.add_pool(v2_pool(address!("1111111111111111111111111111111111111111"), usdc(), wmatic(), 1_000_000, 2_000_000));
         pm.add_pool(v2_pool(address!("2222222222222222222222222222222222222222"), wmatic(), usdt(), 1_000_000, 2_000_000));
-        let opps = TwoHopArbDetector::detect(&pm, 42, 0, 12345, 50_000_000_000);
+        let opps = TwoHopArbDetector::detect(&pm, 42, 0, 12345, 50_000_000_000, default_gas_config());
         assert!(!opps.is_empty());
         for opp in &opps {
             assert_eq!(opp.block_number, 42);
@@ -368,13 +372,13 @@ mod tests {
     #[test]
     fn test_detect_empty_pool_manager() {
         let pm = PoolManager::new();
-        assert!(TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000).is_empty());
+        assert!(TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000, default_gas_config()).is_empty());
     }
 
     #[test]
     fn test_detect_single_pool_no_pairs() {
         let mut pm = PoolManager::new();
         pm.add_pool(v2_pool(address!("1111111111111111111111111111111111111111"), usdc(), wmatic(), 1_000_000, 2_000_000));
-        assert!(TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000).is_empty());
+        assert!(TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000, default_gas_config()).is_empty());
     }
 }

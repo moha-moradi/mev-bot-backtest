@@ -8,21 +8,25 @@ use crate::pool::state::{PoolInfo, PoolManager, PoolState, UniswapV2PoolState};
 use crate::replay::BlockReplayer;
 use crate::resolver::ResolvedRange;
 use crate::rpc::RpcClient;
+use crate::types::GasConfig;
 
 /// Orchestrates backtesting: replays blocks and detects MEV opportunities.
 pub struct BacktestRunner {
     replayer: BlockReplayer,
     pool_manager: PoolManager,
+    gas_config: GasConfig,
 }
 
 impl BacktestRunner {
     pub fn new(
         replayer: BlockReplayer,
         pool_manager: PoolManager,
+        gas_config: GasConfig,
     ) -> Self {
         BacktestRunner {
             replayer,
             pool_manager,
+            gas_config,
         }
     }
 
@@ -97,6 +101,9 @@ impl BacktestRunner {
             self.pool_manager.token_addresses().into_iter().collect();
 
         let mut all_opportunities = Vec::new();
+        // Take ownership of pool_manager so the closure can mutate it via RefCell
+        // (the replayer's closure требует &mut self, so we std::mem::take + RefCell
+        // to satisfy the borrow checker; pool_manager is restored after the block)
         let pool_manager = std::mem::take(&mut self.pool_manager);
         let pool_manager = RefCell::new(pool_manager);
 
@@ -120,6 +127,7 @@ impl BacktestRunner {
                     i,
                     timestamp,
                     base_fee_per_gas,
+                    self.gas_config,
                 );
                 if !opps.is_empty() {
                     tracing::info!(

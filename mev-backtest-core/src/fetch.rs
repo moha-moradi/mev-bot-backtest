@@ -48,22 +48,6 @@ impl Fetcher {
         &self.cache
     }
 
-    async fn fetch_single_block(&self, block_num: u64) -> anyhow::Result<()> {
-        // Check cache first
-        if self.cache.has_block(block_num)? {
-            return Ok(());
-        }
-
-        let (block, txs) = self.rpc.get_block(block_num).await?;
-        let receipts = self.rpc.get_receipts(block_num).await?;
-
-        self.cache.put_block(block_num, &block)?;
-        self.cache.put_txs(block_num, &txs)?;
-        self.cache.put_receipts(block_num, &receipts)?;
-
-        Ok(())
-    }
-
     pub async fn fetch_range(
         &self,
         range: &ResolvedRange,
@@ -81,8 +65,11 @@ impl Fetcher {
         // Process blocks using semaphore-based concurrency
         let mut tasks = Vec::new();
         for block_num in range.start_block..=range.end_block {
-            let permit = semaphore.clone().acquire_owned().await?;
-            tasks.push(self.fetch_one_block(block_num, permit));
+            let sem = semaphore.clone();
+            tasks.push(async move {
+                let _permit = sem.acquire_owned().await?;
+                self.fetch_one_block(block_num).await
+            });
         }
 
         let results: Vec<bool> = try_join_all(tasks).await?;
@@ -109,7 +96,6 @@ impl Fetcher {
     async fn fetch_one_block(
         &self,
         block_num: u64,
-        _permit: tokio::sync::OwnedSemaphorePermit,
     ) -> anyhow::Result<bool> {
         if self.cache.has_block(block_num)? {
             return Ok(false);
@@ -125,8 +111,9 @@ impl Fetcher {
     pub async fn auto_refetch_gaps(&self, gaps: &[u64]) -> anyhow::Result<u64> {
         let mut refetched = 0u64;
         for &block_num in gaps {
-            match self.fetch_single_block(block_num).await {
-                Ok(()) => refetched += 1,
+            match self.fetch_one_block(block_num).await {
+                Ok(true) => refetched += 1,
+                Ok(false) => {}
                 Err(e) => {
                     tracing::warn!("Failed to refetch block {}: {}", block_num, e);
                 }

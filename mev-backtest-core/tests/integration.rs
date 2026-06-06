@@ -2,7 +2,7 @@ use alloy::primitives::{address, Address, U256};
 use mev_backtest_core::mev::two_hop::TwoHopArbDetector;
 use mev_backtest_core::pool::state::UniswapV2PoolState;
 use mev_backtest_core::pool::state::{PoolInfo, PoolManager, PoolState};
-use mev_backtest_core::types::Strategy;
+use mev_backtest_core::types::{GasConfig, Strategy};
 
 fn wmatic() -> Address {
     address!("0d500b1d8e8ef31e21c99d1db9a6444d3adf1270")
@@ -18,6 +18,10 @@ fn matic_usdc_pool() -> Address {
 }
 fn matic_usdt_pool() -> Address {
     address!("604029b0c1a79eebfb31f7c5316434484f3a4b55")
+}
+
+fn default_gas_config() -> GasConfig {
+    GasConfig::default()
 }
 
 fn make_pool(addr: Address, token0: Address, token1: Address, r0: u128, r1: u128) -> PoolState {
@@ -65,7 +69,7 @@ fn test_detection_pipeline_synthetic_profitable() {
     ));
 
     // Direction 1: buy WMATIC from A (spend USDC), sell WMATIC to B (get USDT)
-    let opps = TwoHopArbDetector::detect(&pm, 1_000_000, 0, 12345678, 50_000_000_000);
+    let opps = TwoHopArbDetector::detect(&pm, 1_000_000, 0, 12345678, 50_000_000_000, default_gas_config());
 
     assert!(!opps.is_empty(), "Should detect arb between imbalanced pools");
     assert!(opps.iter().any(|o| o.strategy == Strategy::TwoHopArb));
@@ -91,7 +95,7 @@ fn test_detection_no_arb_equal_pools() {
         1_000_000, 1_000_000,
     ));
 
-    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000);
+    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000, default_gas_config());
 
     assert!(opps.is_empty(), "No arb should be detected with equal prices");
 }
@@ -110,7 +114,7 @@ fn test_gas_cost_min_profit_filter() {
         1_010_000, 1_000_000,
     ));
 
-    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000);
+    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000, default_gas_config());
 
     // Check that gas_cost_wei is computed correctly
     for opp in &opps {
@@ -172,7 +176,7 @@ fn test_detect_both_directions() {
     pm.add_pool(make_pool(matic_usdc_pool(), usdc(), wmatic(), 1_000_000, 2_000_000));
     pm.add_pool(make_pool(matic_usdt_pool(), usdt(), wmatic(), 1_000_000, 500_000));
 
-    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000);
+    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000, default_gas_config());
 
     // Should find arb in at least one direction
     assert!(!opps.is_empty(), "Should detect arb");
@@ -192,7 +196,7 @@ fn test_arb_profit_accuracy_known_delta() {
     // Pool B: USDT/WMATIC — price: 1 WMATIC = 2.0 USDT
     pm.add_pool(make_pool(matic_usdt_pool(), usdt(), wmatic(), 1_000_000, 500_000));
 
-    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000);
+    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000, default_gas_config());
 
     assert!(!opps.is_empty(), "Should detect arb");
     for opp in &opps {
@@ -215,7 +219,7 @@ fn test_two_hop_same_token_different_reserves() {
     pm.add_pool(make_pool(pool_a, usdc(), wmatic(), 1_000_000, 3_000_000));
     pm.add_pool(make_pool(pool_b, usdc(), wmatic(), 1_000_000, 1_000_000));
 
-    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000);
+    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000, default_gas_config());
 
     // Arb exists: buy WMATIC cheap on A, sell expensive on B
     assert!(!opps.is_empty(), "Should detect arb between same-token pools with different prices");
@@ -251,7 +255,7 @@ fn test_two_hop_v3_reserves_update_accuracy() {
     pm.add_pool(v3_pool);
     pm.add_pool(v2_pool);
 
-    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000);
+    let opps = TwoHopArbDetector::detect(&pm, 1, 0, 100, 50_000_000_000, default_gas_config());
 
     // V3+V2 cross-DEX detection should work
     // This may or may not detect an arb depending on price state

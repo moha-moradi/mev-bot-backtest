@@ -10,6 +10,7 @@ pub struct ValidationResult {
     pub range_mode: RangeMode,
     pub strategies: Vec<Strategy>,
     pub flash_loan_provider: FlashLoanProvider,
+    pub gas_model: GasModel,
 }
 
 #[derive(Debug)]
@@ -266,7 +267,7 @@ pub fn validate_and_resolve_for(config: &Config, check_strategies: bool) -> Resu
     }
 
     // 7. Validate gas model
-    let _gas_model: GasModel = config.gas_model.parse().map_err(|e: String| {
+    let gas_model: GasModel = config.gas_model.parse().map_err(|e: String| {
         ValidationError::Message(format!("Error: {e}"))
     })?;
 
@@ -281,6 +282,7 @@ pub fn validate_and_resolve_for(config: &Config, check_strategies: bool) -> Resu
         range_mode,
         strategies,
         flash_loan_provider: provider,
+        gas_model,
     })
 }
 
@@ -301,7 +303,8 @@ mod tests {
     fn test_validate_valid_config() {
         let result = validate_and_resolve(&valid_config()).unwrap();
         assert_eq!(result.chain_name, ChainName::Polygon);
-        assert_eq!(result.strategies, vec![Strategy::TwoHopArb]);
+        assert_eq!(result.strategies, Strategy::all());
+        assert_eq!(result.gas_model, GasModel::HistoricalExact);
         assert!(matches!(result.range_mode, RangeMode::Single(50_000_000)));
     }
 

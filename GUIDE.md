@@ -178,11 +178,25 @@ Prints the full resolved configuration as TOML after merging config file and CLI
 
 #### `report` — Re-render tables from saved JSON
 
-```
-mev-backtest report
+```bash
+mev-backtest report [OPTIONS]
 ```
 
-*Not yet implemented.*
+Re-renders saved results from a previous `run` execution. By default loads the latest results file from the export directory.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--run-id <ID>` | latest | Specific run ID to load (the filename without extension) |
+| `--output <FORMAT>` | `table` | Output format: `table`, `csv`, `json`. |
+| `--export-path <PATH>` | `./results` | Directory where result files are stored |
+
+```bash
+# Show the latest run results
+mev-backtest report
+
+# Show a specific run as CSV
+mev-backtest report --run-id run_1712345678 --output csv
+```
 
 #### `discover` — On-chain pool discovery
 

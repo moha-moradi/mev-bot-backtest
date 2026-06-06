@@ -49,6 +49,14 @@ pub struct Config {
     #[serde(default = "default_gas_model")]
     pub gas_model: String,
 
+    // Gas limit for arb tx cost estimation
+    #[serde(default = "default_gas_limit")]
+    pub gas_limit: u64,
+
+    // Priority fee premium in gwei (added on top of base fee)
+    #[serde(default = "default_priority_fee_gwei")]
+    pub priority_fee_gwei: f64,
+
     // Output
     #[serde(default = "default_output_format")]
     pub output: String,
@@ -94,6 +102,14 @@ fn default_gas_model() -> String {
     "historical_exact".to_string()
 }
 
+fn default_gas_limit() -> u64 {
+    200_000
+}
+
+fn default_priority_fee_gwei() -> f64 {
+    0.0
+}
+
 fn default_output_format() -> String {
     "table".to_string()
 }
@@ -114,6 +130,8 @@ impl Default for Config {
             flash_loan_provider: default_flash_loan_provider(),
             strategies: default_strategies(),
             gas_model: default_gas_model(),
+            gas_limit: default_gas_limit(),
+            priority_fee_gwei: default_priority_fee_gwei(),
             output: default_output_format(),
             export_path: default_export_path(),
             cache_dir: default_cache_dir(),
@@ -333,6 +351,8 @@ pub struct CliOverrides {
     pub flash_loan_provider: Option<String>,
     pub strategies: Option<String>,
     pub gas_model: Option<String>,
+    pub gas_limit: Option<u64>,
+    pub priority_fee_gwei: Option<f64>,
     pub output: Option<String>,
     pub export_path: Option<String>,
     pub cache_dir: Option<String>,
@@ -369,6 +389,12 @@ impl Config {
         }
         if let Some(v) = &overrides.gas_model {
             self.gas_model = v.clone();
+        }
+        if let Some(v) = overrides.gas_limit {
+            self.gas_limit = v;
+        }
+        if let Some(v) = overrides.priority_fee_gwei {
+            self.priority_fee_gwei = v;
         }
         if let Some(v) = &overrides.output {
             self.output = v.clone();
@@ -467,6 +493,8 @@ rpc_url = "https://eth.diy"
             flash_loan_provider: Some("aave".into()),
             strategies: Some("two_hop_arb".into()),
             gas_model: Some("fixed".into()),
+            gas_limit: Some(300_000),
+            priority_fee_gwei: Some(2.5),
             output: Some("json".into()),
             export_path: Some("./out".into()),
             cache_dir: Some("./db".into()),
@@ -479,6 +507,8 @@ rpc_url = "https://eth.diy"
         assert_eq!(cfg.flash_loan_provider, "aave");
         assert_eq!(cfg.strategies, "two_hop_arb");
         assert_eq!(cfg.gas_model, "fixed");
+        assert_eq!(cfg.gas_limit, 300_000);
+        assert_eq!(cfg.priority_fee_gwei, 2.5);
         assert_eq!(cfg.output, "json");
         assert_eq!(cfg.export_path, "./out");
         assert_eq!(cfg.cache_dir, "./db");
@@ -492,7 +522,8 @@ rpc_url = "https://eth.diy"
             blocks: None, block: None, from_block: None, to_block: None,
             chain: None, rpc_url: None,
             flash_loan_provider: None, strategies: None,
-            gas_model: None, output: None, export_path: None, cache_dir: None,
+            gas_model: None, gas_limit: None, priority_fee_gwei: None,
+            output: None, export_path: None, cache_dir: None,
         };
         cfg.merge_cli(&overrides);
         assert_eq!(cfg.days, Some(7));

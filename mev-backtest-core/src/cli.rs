@@ -100,6 +100,14 @@ pub struct RunArgs {
     #[arg(long, default_value = "historical_exact", value_name = "MODEL", help_heading = "Gas Model")]
     pub gas_model: String,
 
+    /// Gas limit for arb transaction cost estimation
+    #[arg(long, default_value_t = 200_000, value_name = "GAS", help_heading = "Gas Model")]
+    pub gas_limit: u64,
+
+    /// Priority fee premium in gwei (added on top of base fee)
+    #[arg(long, default_value_t = 0.0, value_name = "GWEI", help_heading = "Gas Model")]
+    pub priority_fee: f64,
+
     /// Output format: table, csv, json
     #[arg(long, default_value = "table", value_name = "FORMAT", help_heading = "Output")]
     pub output: String,

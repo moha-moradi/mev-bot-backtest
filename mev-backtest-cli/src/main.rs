@@ -17,7 +17,7 @@ use mev_backtest_core::resolver::RangeResolver;
 use mev_backtest_core::rpc::RpcClient;
 use mev_backtest_core::mev::opportunity::ResultsFile;
 use mev_backtest_core::run::BacktestRunner;
-use mev_backtest_core::types::OutputFormat;
+use mev_backtest_core::types::{GasConfig, OutputFormat};
 use mev_backtest_core::validation;
 
 fn setup_logging(verbose: bool, quiet: bool) {
@@ -49,6 +49,8 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             flash_loan_provider: Some(args.flash_loan_provider.clone()),
             strategies: Some(args.strategies.clone()),
             gas_model: Some(args.gas_model.clone()),
+            gas_limit: Some(args.gas_limit),
+            priority_fee_gwei: Some(args.priority_fee),
             output: Some(args.output.clone()),
             export_path: Some(args.export_path.clone()),
             cache_dir: Some(args.cache_dir.clone()),
@@ -64,6 +66,8 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             flash_loan_provider: None,
             strategies: None,
             gas_model: None,
+            gas_limit: None,
+            priority_fee_gwei: None,
             output: None,
             export_path: None,
             cache_dir: None,
@@ -79,6 +83,8 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             flash_loan_provider: None,
             strategies: None,
             gas_model: None,
+            gas_limit: None,
+            priority_fee_gwei: None,
             output: None,
             export_path: None,
             cache_dir: Some(args.cache_dir.clone()),
@@ -94,6 +100,8 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             flash_loan_provider: None,
             strategies: None,
             gas_model: None,
+            gas_limit: None,
+            priority_fee_gwei: None,
             output: Some(args.output.clone()),
             export_path: Some(args.export_path.clone()),
             cache_dir: None,
@@ -109,6 +117,8 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             flash_loan_provider: None,
             strategies: None,
             gas_model: None,
+            gas_limit: None,
+            priority_fee_gwei: None,
             output: None,
             export_path: None,
             cache_dir: None,
@@ -124,6 +134,8 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             flash_loan_provider: None,
             strategies: None,
             gas_model: None,
+            gas_limit: None,
+            priority_fee_gwei: None,
             output: None,
             export_path: None,
             cache_dir: Some(args.cache_dir.clone()),
@@ -308,7 +320,12 @@ async fn main() -> anyhow::Result<()> {
             );
 
             // Run backtest
-            let mut runner = BacktestRunner::new(replayer, pool_manager);
+            let gas_config = GasConfig {
+                gas_limit: config.gas_limit,
+                gas_model: validation_result.gas_model,
+                priority_fee_gwei: config.priority_fee_gwei,
+            };
+            let mut runner = BacktestRunner::new(replayer, pool_manager, gas_config);
             let start = std::time::Instant::now();
             let all_opportunities = runner.run_range(&resolved)?;
             let elapsed = start.elapsed();

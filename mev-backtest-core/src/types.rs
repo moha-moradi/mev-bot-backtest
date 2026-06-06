@@ -145,12 +145,20 @@ impl FlashLoanProvider {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Strategy {
     TwoHopArb,
+    MultiHopArb,
+    Jit,
+    JitArb,
+    Sandwich,
 }
 
 impl fmt::Display for Strategy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Strategy::TwoHopArb => write!(f, "two_hop_arb"),
+            Strategy::MultiHopArb => write!(f, "multi_hop_arb"),
+            Strategy::Jit => write!(f, "jit"),
+            Strategy::JitArb => write!(f, "jit_arb"),
+            Strategy::Sandwich => write!(f, "sandwich"),
         }
     }
 }
@@ -161,8 +169,12 @@ impl FromStr for Strategy {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "two_hop_arb" => Ok(Strategy::TwoHopArb),
+            "multi_hop_arb" => Ok(Strategy::MultiHopArb),
+            "jit" => Ok(Strategy::Jit),
+            "jit_arb" => Ok(Strategy::JitArb),
+            "sandwich" => Ok(Strategy::Sandwich),
             _ => Err(format!(
-                "unknown strategy '{s}'. Supported: two_hop_arb, all"
+                "unknown strategy '{s}'. Supported: two_hop_arb, multi_hop_arb, jit, jit_arb, sandwich, all"
             )),
         }
     }
@@ -170,7 +182,13 @@ impl FromStr for Strategy {
 
 impl Strategy {
     pub fn all() -> &'static [Strategy] {
-        &[Strategy::TwoHopArb]
+        &[
+            Strategy::TwoHopArb,
+            Strategy::MultiHopArb,
+            Strategy::Jit,
+            Strategy::JitArb,
+            Strategy::Sandwich,
+        ]
     }
 
     pub fn from_comma_list(s: &str) -> Result<Vec<Strategy>, String> {
@@ -234,6 +252,12 @@ impl fmt::Display for GasModel {
     }
 }
 
+impl Default for GasModel {
+    fn default() -> Self {
+        GasModel::HistoricalExact
+    }
+}
+
 impl FromStr for GasModel {
     type Err = String;
 
@@ -245,6 +269,35 @@ impl FromStr for GasModel {
             _ => Err(format!(
                 "unknown gas model '{s}'. Supported: historical_exact, p90, fixed"
             )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct GasConfig {
+    pub gas_limit: u64,
+    pub gas_model: GasModel,
+    pub priority_fee_gwei: f64,
+}
+
+impl GasConfig {
+    pub fn compute_gas_cost(&self, base_fee_per_gas: u128) -> u128 {
+        let pf_wei = (self.priority_fee_gwei * 1_000_000_000.0) as u128;
+        let effective_price = match self.gas_model {
+            GasModel::HistoricalExact => base_fee_per_gas.saturating_add(pf_wei),
+            GasModel::Fixed => pf_wei,
+            GasModel::P90 => base_fee_per_gas.saturating_mul(150).saturating_div(100).saturating_add(pf_wei),
+        };
+        (self.gas_limit as u128).saturating_mul(effective_price)
+    }
+}
+
+impl Default for GasConfig {
+    fn default() -> Self {
+        GasConfig {
+            gas_limit: 200_000,
+            gas_model: GasModel::default(),
+            priority_fee_gwei: 0.0,
         }
     }
 }
@@ -338,13 +391,21 @@ mod tests {
 
     #[test]
     fn test_strategy_roundtrip() {
-        assert_eq!(Strategy::TwoHopArb.to_string(), "two_hop_arb");
-        assert_eq!("two_hop_arb".parse::<Strategy>().unwrap(), Strategy::TwoHopArb);
+        for (s, expected) in &[
+            (Strategy::TwoHopArb, "two_hop_arb"),
+            (Strategy::MultiHopArb, "multi_hop_arb"),
+            (Strategy::Jit, "jit"),
+            (Strategy::JitArb, "jit_arb"),
+            (Strategy::Sandwich, "sandwich"),
+        ] {
+            assert_eq!(s.to_string(), *expected);
+            assert_eq!(expected.parse::<Strategy>().unwrap(), *s);
+        }
     }
 
     #[test]
     fn test_strategy_unknown() {
-        assert!("sandwich".parse::<Strategy>().unwrap_err().contains("unknown strategy"));
+        assert!("unknown_strat".parse::<Strategy>().unwrap_err().contains("unknown strategy"));
     }
 
     #[test]
@@ -361,7 +422,7 @@ mod tests {
 
     #[test]
     fn test_strategy_all_static() {
-        assert_eq!(Strategy::all(), &[Strategy::TwoHopArb]);
+        assert_eq!(Strategy::all().len(), 5);
     }
 
     #[test]
@@ -404,6 +465,50 @@ mod tests {
     #[test]
     fn test_output_format_unknown() {
         assert!("xml".parse::<OutputFormat>().unwrap_err().contains("unknown output format"));
+    }
+
+    #[test]
+    fn test_gas_config_default_compute_historical_exact() {
+        let cfg = GasConfig::default();
+        let cost = cfg.compute_gas_cost(50_000_000_000);
+        assert_eq!(cost, 200_000u128 * 50_000_000_000);
+    }
+
+    #[test]
+    fn test_gas_config_priority_fee() {
+        let cfg = GasConfig {
+            priority_fee_gwei: 2.0,
+            ..GasConfig::default()
+        };
+        // 200_000 * (50 + 2) = 200_000 * 52 = 10_400_000_000_000
+        let cost = cfg.compute_gas_cost(50_000_000_000u128);
+        assert_eq!(cost, 200_000u128 * 52_000_000_000u128);
+    }
+
+    #[test]
+    fn test_gas_config_fixed_model() {
+        let cfg = GasConfig {
+            gas_model: GasModel::Fixed,
+            priority_fee_gwei: 3.0,
+            ..GasConfig::default()
+        };
+        // Fixed: only priority fee (3 gwei = 3_000_000_000 wei)
+        // 200_000 * 3_000_000_000 = 600_000_000_000_000
+        let cost = cfg.compute_gas_cost(50_000_000_000u128);
+        assert_eq!(cost, 200_000u128 * 3_000_000_000u128);
+    }
+
+    #[test]
+    fn test_gas_config_p90_model() {
+        let cfg = GasConfig {
+            gas_model: GasModel::P90,
+            priority_fee_gwei: 1.0,
+            ..GasConfig::default()
+        };
+        // P90: base_fee * 1.5 + priority_fee = 50 * 1.5 + 1 = 76 gwei
+        // 200_000 * 76_000_000_000 = 15_200_000_000_000_000
+        let cost = cfg.compute_gas_cost(50_000_000_000u128);
+        assert_eq!(cost, 200_000u128 * 76_000_000_000u128);
     }
 }
 
