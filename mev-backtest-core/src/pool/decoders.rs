@@ -1,6 +1,7 @@
 use alloy::primitives::{b256, keccak256, Address, B256, U256};
 
 use crate::data::ExecutedLog;
+use crate::utils::u128_from_be_bytes;
 
 /// Uniswap V3: Swap(address sender, address recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)
 pub const V3_SWAP_TOPIC: B256 =
@@ -68,7 +69,7 @@ pub fn decode_v3_swap(log: &ExecutedLog) -> Option<V3SwapDecoded> {
         return None;
     }
     let sqrt_price_x96 = U256::from_be_slice(&log.data[64..96]);
-    let liquidity = u128_from_be_bytes_32(&log.data[96..128]);
+    let liquidity = u128_from_be_bytes(&log.data[96..128]);
 
     // tick is int24, stored right-aligned in 32 bytes
     let tick_bytes: [u8; 32] = log.data[128..160].try_into().ok()?;
@@ -115,7 +116,7 @@ pub fn decode_v3_mint_burn(log: &ExecutedLog) -> Option<V3MintBurnDecoded> {
         upper_bytes[30],
         upper_bytes[31],
     ]);
-    let raw = u128_from_be_bytes_32(&log.data[64..96]);
+    let raw = u128_from_be_bytes(&log.data[64..96]);
     let amount = if log.topics[0] == V3_BURN_TOPIC {
         -(raw as i128)
     } else {
@@ -144,10 +145,10 @@ pub fn decode_curve_swap(log: &ExecutedLog) -> Option<CurveSwapDecoded> {
     if log.data.len() < 128 {
         return None;
     }
-    let coin_sold = u128_from_be_bytes_32(&log.data[..32]);
-    let amount_sold = u128_from_be_bytes_32(&log.data[32..64]);
-    let coin_bought = u128_from_be_bytes_32(&log.data[64..96]);
-    let amount_bought = u128_from_be_bytes_32(&log.data[96..128]);
+    let coin_sold = u128_from_be_bytes(&log.data[..32]);
+    let amount_sold = u128_from_be_bytes(&log.data[32..64]);
+    let coin_bought = u128_from_be_bytes(&log.data[64..96]);
+    let amount_bought = u128_from_be_bytes(&log.data[96..128]);
 
     Some(CurveSwapDecoded {
         coin_sold,
@@ -174,8 +175,8 @@ pub fn decode_balancer_swap(log: &ExecutedLog) -> Option<BalancerSwapDecoded> {
     let pool_id: [u8; 32] = log.topics[1].into();
     let token_in = Address::from_slice(&log.topics[2].as_slice()[12..]);
     let token_out = Address::from_slice(&log.topics[3].as_slice()[12..]);
-    let amount_in = u128_from_be_bytes_32(&log.data[..32]);
-    let amount_out = u128_from_be_bytes_32(&log.data[32..64]);
+    let amount_in = u128_from_be_bytes(&log.data[..32]);
+    let amount_out = u128_from_be_bytes(&log.data[32..64]);
 
     Some(BalancerSwapDecoded {
         pool_id,
@@ -184,14 +185,6 @@ pub fn decode_balancer_swap(log: &ExecutedLog) -> Option<BalancerSwapDecoded> {
         amount_in,
         amount_out,
     })
-}
-
-/// Decode a uint128 from the last 16 bytes of a 32-byte slice.
-fn u128_from_be_bytes_32(bytes: &[u8]) -> u128 {
-    let start = bytes.len().saturating_sub(16);
-    let mut buf = [0u8; 16];
-    buf.copy_from_slice(&bytes[start..start + 16]);
-    u128::from_be_bytes(buf)
 }
 
 #[cfg(test)]
