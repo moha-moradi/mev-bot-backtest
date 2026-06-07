@@ -767,3 +767,75 @@ async fn test_real_v3_mint_swap_burn_detection() {
     // even though we can't produce real V3 events without replaying a block.
     assert!(opps.is_empty(), "No JIT without any events");
 }
+
+/// ── JitArb Detection Tests ──────────────────────────────────────────────────
+#[test]
+fn test_jit_arb_detection_synthetic() {
+    use mev_backtest_core::mev::jit_arb::JitArbDetector;
+    use mev_backtest_core::pool::decoders::{V3_SWAP_TOPIC, V3_MINT_TOPIC};
+    use mev_backtest_core::data::ExecutedLog;
+    use alloy::primitives::{address, Address, Bytes, B256};
+
+    let pool_p = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    let pool_q = address!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    let sender = address!("1111111111111111111111111111111111111111");
+    let wmatic = address!("0d500b1d8e8ef31e21c99d1db9a6444d3adf1270");
+    let usdc = address!("2791bca1f2de4661ed88a30c99a7a9449aa84174");
+
+    fn v3_mint_log(pool: Address, lower: i32, upper: i32, amount: u128) -> ExecutedLog {
+        let mut data = Vec::new();
+        let mut padded = [0u8; 32];
+        padded[28..32].copy_from_slice(&lower.to_be_bytes());
+        data.extend_from_slice(&padded);
+        padded = [0u8; 32];
+        padded[28..32].copy_from_slice(&upper.to_be_bytes());
+        data.extend_from_slice(&padded);
+        padded = [0u8; 32];
+        padded[16..32].copy_from_slice(&amount.to_be_bytes());
+        data.extend_from_slice(&padded);
+        ExecutedLog { address: pool, topics: vec![*V3_MINT_TOPIC, B256::ZERO, B256::ZERO], data: data.into() }
+    }
+
+    fn v3_swap_log(pool: Address) -> ExecutedLog {
+        ExecutedLog { address: pool, topics: vec![V3_SWAP_TOPIC, B256::ZERO, B256::ZERO], data: Bytes::from_static(&[0u8; 160]) }
+    }
+
+    let mut pm = mev_backtest_core::pool::state::PoolManager::new();
+    pm.add_pool(mev_backtest_core::pool::state::PoolState::UniswapV2(
+        mev_backtest_core::pool::state::UniswapV2PoolState {
+            info: mev_backtest_core::pool::state::PoolInfo {
+                address: pool_p, token0: wmatic, token1: usdc, fee: 30, name: None,
+                dex_type: mev_backtest_core::pool::dex_type::DexType::UniswapV2, tick_spacing: None,
+            },
+            reserve0: 1_000_000, reserve1: 1_000_000,
+        },
+    ));
+    pm.add_pool(mev_backtest_core::pool::state::PoolState::UniswapV2(
+        mev_backtest_core::pool::state::UniswapV2PoolState {
+            info: mev_backtest_core::pool::state::PoolInfo {
+                address: pool_q,
+                token0: usdc,
+                token1: address!("c2132d05d31c914a87c6611c10748aeb04b58e8f"),
+                fee: 30, name: None,
+                dex_type: mev_backtest_core::pool::dex_type::DexType::UniswapV2, tick_spacing: None,
+            },
+            reserve0: 1_000_000, reserve1: 1_000_000,
+        },
+    ));
+
+    let mut detector = JitArbDetector::new(42);
+    detector.process_tx(0, &[
+        v3_mint_log(pool_p, -100, 100, 500_000),
+        v3_swap_log(pool_p),
+        v3_swap_log(pool_q),
+    ], Some(sender));
+
+    let opps = detector.detect(12345, &pm);
+    assert_eq!(opps.len(), 1, "Should detect JitArb");
+    assert_eq!(opps[0].strategy, mev_backtest_core::types::Strategy::JitArb);
+    assert_eq!(opps[0].pool_a, pool_p);
+    assert_eq!(opps[0].pool_b, pool_q);
+    assert_eq!(opps[0].liquidity_amount, Some(500_000));
+    assert_eq!(opps[0].tick_lower, Some(-100));
+    assert_eq!(opps[0].tick_upper, Some(100));
+}
