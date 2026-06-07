@@ -197,6 +197,8 @@ impl BacktestRunner {
                 }
                 all_opportunities.extend(sandwich_opps);
 
+                drop(pm);
+
                 // JitArb detector
                 jit_arb_detector.process_tx(i, &tx.logs, sender);
                 let jit_arb_opps = jit_arb_detector.detect(timestamp, &pool_manager.borrow());
