@@ -2,6 +2,7 @@ use std::cell::RefCell;
 
 use crate::cache::CacheStore;
 use crate::mev::opportunity::MevOpportunity;
+use crate::mev::multi_hop::MultiHopArbDetector;
 use crate::mev::two_hop::TwoHopArbDetector;
 use crate::pool::registry::PoolRegistry;
 use crate::pool::state::{PoolInfo, PoolManager, PoolState, UniswapV2PoolState};
@@ -138,6 +139,24 @@ impl BacktestRunner {
                     );
                 }
                 all_opportunities.extend(opps);
+
+                let multi_opps = MultiHopArbDetector::detect(
+                    &pm,
+                    block_num,
+                    i,
+                    timestamp,
+                    base_fee_per_gas,
+                    self.gas_config,
+                );
+                if !multi_opps.is_empty() {
+                    tracing::info!(
+                        "Block {} tx {}: {} multi-hop arb opportunities",
+                        block_num,
+                        i,
+                        multi_opps.len()
+                    );
+                }
+                all_opportunities.extend(multi_opps);
 
                 Ok(())
             },
