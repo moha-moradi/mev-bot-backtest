@@ -199,7 +199,7 @@ impl BacktestRunner {
 
                 // JitArb detector
                 jit_arb_detector.process_tx(i, &tx.logs, sender);
-                let jit_arb_opps = jit_arb_detector.detect(timestamp, &*pool_manager.borrow());
+                let jit_arb_opps = jit_arb_detector.detect(timestamp, &pool_manager.borrow());
                 if !jit_arb_opps.is_empty() {
                     tracing::info!(
                         "Block {} tx {}: {} JitArb opportunities",
