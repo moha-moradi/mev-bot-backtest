@@ -1,0 +1,279 @@
+[
+  {
+    "address": "0x0ed7e52944161450477ee417de9cd3a859b14fd0",
+    "type": "uniswap_v2",
+    "token0": "0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 30,
+    "name": "PancakeSwap V2 CAKE/WBNB"
+  },
+  {
+    "address": "0x58f876857a02d6762e0101bb5c46a8c1ed44dc16",
+    "type": "uniswap_v2",
+    "token0": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "token1": "0xe9e7cea3dedca5984780bafc599bd69add087d56",
+    "fee": 30,
+    "name": "PancakeSwap V2 WBNB/BUSD"
+  },
+  {
+    "address": "0x16b9a82891338f9ba80e2d6970fdda79d1eb0dae",
+    "type": "uniswap_v2",
+    "token0": "0x55d398326f99059ff775485246999027b3197955",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 30,
+    "name": "PancakeSwap V2 BSC-USD/WBNB"
+  },
+  {
+    "address": "0xd99c7f6c65857ac913a8f880a4cb84032ab2fc5b",
+    "type": "uniswap_v2",
+    "token0": "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 30,
+    "name": "PancakeSwap V2 USDC/WBNB"
+  },
+  {
+    "address": "0xb98c30fa9f5e9cf6749b7021b4ddc0dbfe73b73e",
+    "type": "uniswap_v2",
+    "token0": "0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82",
+    "token1": "0xe9e7cea3dedca5984780bafc599bd69add087d56",
+    "fee": 30,
+    "name": "PancakeSwap V2 CAKE/BUSD"
+  },
+  {
+    "address": "0xa39af17ce4a8eb807e076805da1e2b8ea7d0755b",
+    "type": "uniswap_v2",
+    "token0": "0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82",
+    "token1": "0x55d398326f99059ff775485246999027b3197955",
+    "fee": 30,
+    "name": "PancakeSwap V2 CAKE/BSC-USD"
+  },
+  {
+    "address": "0x74e4716e431f45807dcf19f284c7aa99f18a4fbc",
+    "type": "uniswap_v2",
+    "token0": "0x2170ed0880ac9a755fd29b2688956bd959f933f8",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 30,
+    "name": "PancakeSwap V2 ETH/WBNB"
+  },
+  {
+    "address": "0x531febfeb9a61d948c384acfbe6dcc51057aea7e",
+    "type": "uniswap_v2",
+    "token0": "0x2170ed0880ac9a755fd29b2688956bd959f933f8",
+    "token1": "0x55d398326f99059ff775485246999027b3197955",
+    "fee": 30,
+    "name": "PancakeSwap V2 ETH/BSC-USD"
+  },
+  {
+    "address": "0xea26b78255df2bbc31c1ebf60010d78670185bd0",
+    "type": "uniswap_v2",
+    "token0": "0x2170ed0880ac9a755fd29b2688956bd959f933f8",
+    "token1": "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",
+    "fee": 30,
+    "name": "PancakeSwap V2 ETH/USDC"
+  },
+  {
+    "address": "0xc7c3ccce4fa25700fd5574da7e200ae28bbd36a3",
+    "type": "uniswap_v2",
+    "token0": "0x1af3f329e8be154074d8769d1ffa4ee058b1dbc3",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 30,
+    "name": "PancakeSwap V2 DAI/WBNB"
+  },
+  {
+    "address": "0x7efaef62fddcca950418312c6c91aef321375a00",
+    "type": "uniswap_v2",
+    "token0": "0x55d398326f99059ff775485246999027b3197955",
+    "token1": "0xe9e7cea3dedca5984780bafc599bd69add087d56",
+    "fee": 30,
+    "name": "PancakeSwap V2 BSC-USD/BUSD"
+  },
+  {
+    "address": "0x2354ef4df11afacb85a5c7f98b624072eccddbb1",
+    "type": "uniswap_v2",
+    "token0": "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",
+    "token1": "0xe9e7cea3dedca5984780bafc599bd69add087d56",
+    "fee": 30,
+    "name": "PancakeSwap V2 USDC/BUSD"
+  },
+  {
+    "address": "0x824eb9fadfb377394430d2744fa7c42916de3ece",
+    "type": "uniswap_v2",
+    "token0": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "token1": "0xf8a0bf9cf54bb92f17374d9e9a321e6a111a51bd",
+    "fee": 30,
+    "name": "PancakeSwap V2 WBNB/LINK"
+  },
+  {
+    "address": "0x28415ff2c35b65b9e5c7de82126b4015ab9d031f",
+    "type": "uniswap_v2",
+    "token0": "0x3ee2200efb3400fabb9aacf31297cbdd1d435d47",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 30,
+    "name": "PancakeSwap V2 ADA/WBNB"
+  },
+  {
+    "address": "0xba01662e978de7d67f8ffc937726215eb8995d17",
+    "type": "uniswap_v2",
+    "token0": "0x5a3010d4d8d3b5fb49f8b6e57fb9e48063f16700",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 30,
+    "name": "PancakeSwap V2 BSCPAD/WBNB"
+  },
+  {
+    "address": "0x8ca3ff14a52b080c54a6d1a405eeca02959d39fe",
+    "type": "uniswap_v2",
+    "token0": "0x965f527d9159dce6288a2219db51fc6eef120dd1",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 30,
+    "name": "PancakeSwap V2 BSW/WBNB"
+  },
+  {
+    "address": "0x61eb789d75a95caa3ff50ed7e47b96c132fec082",
+    "type": "uniswap_v2",
+    "token0": "0x7130d2a12b9bcbfae4f2634d864a1ee1ce3ead9c",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 30,
+    "name": "PancakeSwap V2 BTCB/WBNB"
+  },
+  {
+    "address": "0x03f18135c44c64ebfdcbad8297fe5bdafdbbdd86",
+    "type": "uniswap_v2",
+    "token0": "0x1d2f0da169ceb9fc7b3144628db156f3f6c60dbe",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 30,
+    "name": "PancakeSwap V2 XRP/WBNB"
+  },
+  {
+    "address": "0xafb2da14056725e3ba3a30dd846b6bbbd7886c56",
+    "type": "uniswap_v3",
+    "token0": "0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 500,
+    "name": "PancakeSwap V3 CAKE/WBNB 0.05%",
+    "tick_spacing": 10
+  },
+  {
+    "type": "uniswap_v3",
+    "token0": "0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 500,
+    "name": "PancakeSwap V3 CAKE/WBNB 0.05%",
+    "tick_spacing": 10
+  },
+  {
+    "address": "0x133b3d95bad5405d14d53473671200e9342896bf",
+    "type": "uniswap_v3",
+    "token0": "0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 2500,
+    "name": "PancakeSwap V3 CAKE/WBNB 0.25%",
+    "tick_spacing": 50
+  },
+  {
+    "address": "0x36696169c63e42cd08ce11f5deebbcebae652050",
+    "type": "uniswap_v3",
+    "token0": "0x55d398326f99059ff775485246999027b3197955",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 500,
+    "name": "PancakeSwap V3 BSC-USD/WBNB 0.05%",
+    "tick_spacing": 10
+  },
+  {
+    "address": "0xd0e226f674bbf064f54ab47f42473ff80db98cba",
+    "type": "uniswap_v3",
+    "token0": "0x2170ed0880ac9a755fd29b2688956bd959f933f8",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 500,
+    "name": "PancakeSwap V3 ETH/WBNB 0.05%",
+    "tick_spacing": 10
+  },
+  {
+    "address": "0x62fcb3c1794fb95bd8b1a97f6ad5d8a7e4943a1e",
+    "type": "uniswap_v3",
+    "token0": "0x2170ed0880ac9a755fd29b2688956bd959f933f8",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 100,
+    "name": "PancakeSwap V3 ETH/WBNB 0.01%",
+    "tick_spacing": 1
+  },
+  {
+    "address": "0x7d05c84581f0c41ad80ddf677a510360bae09a5a",
+    "type": "uniswap_v3",
+    "token0": "0x2170ed0880ac9a755fd29b2688956bd959f933f8",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 2500,
+    "name": "PancakeSwap V3 ETH/WBNB 0.25%",
+    "tick_spacing": 50
+  },
+  {
+    "address": "0x9f599f3d64a9d99ea21e68127bb6ce99f893da61",
+    "type": "uniswap_v3",
+    "token0": "0x2170ed0880ac9a755fd29b2688956bd959f933f8",
+    "token1": "0x55d398326f99059ff775485246999027b3197955",
+    "fee": 100,
+    "name": "PancakeSwap V3 ETH/BSC-USD 0.01%",
+    "tick_spacing": 1
+  },
+  {
+    "address": "0x92b7807bf19b7dddf89b706143896d05228f3121",
+    "type": "uniswap_v3",
+    "token0": "0x55d398326f99059ff775485246999027b3197955",
+    "token1": "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",
+    "fee": 100,
+    "name": "PancakeSwap V3 BSC-USD/USDC 0.01%",
+    "tick_spacing": 1
+  },
+  {
+    "address": "0x7f51c8aaa6b0599abd16674e2b17fec7a9f674a1",
+    "type": "uniswap_v3",
+    "token0": "0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82",
+    "token1": "0x55d398326f99059ff775485246999027b3197955",
+    "fee": 2500,
+    "name": "PancakeSwap V3 CAKE/BSC-USD 0.25%",
+    "tick_spacing": 50
+  },
+  {
+    "address": "0x6bbc40579ad1bbd243895ca0acb086bb6300d636",
+    "type": "uniswap_v3",
+    "token0": "0x7130d2a12b9bcbfae4f2634d864a1ee1ce3ead9c",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 500,
+    "name": "PancakeSwap V3 BTCB/WBNB 0.05%",
+    "tick_spacing": 10
+  },
+  {
+    "address": "0x71f5a8f7d448e59b1ede00a19fe59e05d125e742",
+    "type": "uniswap_v3",
+    "token0": "0x1d2f0da169ceb9fc7b3144628db156f3f6c60dbe",
+    "token1": "0x55d398326f99059ff775485246999027b3197955",
+    "fee": 2500,
+    "name": "PancakeSwap V3 XRP/BSC-USD 0.25%",
+    "tick_spacing": 50
+  },
+  {
+    "address": "0x16d7c51e9c59be9f18b19b608d53b37fa9890b8a",
+    "type": "uniswap_v3",
+    "token0": "0x0d8ce2a99bb6e3b7db580ed848240e4a0f78ae13",
+    "token1": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "fee": 500,
+    "name": "PancakeSwap V3 FIL/WBNB 0.05%",
+    "tick_spacing": 10
+  },
+  {
+    "address": "0x231d9e7181e8479a8b40930961e93e7ed798542c",
+    "type": "uniswap_v2",
+    "token0": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "token1": "0xfb5b838b6cfeedc2873ab27866079ac55363d37e",
+    "fee": 30,
+    "name": "PancakeSwap V2 WBNB/FLOKI"
+  },
+  {
+    "address": "0x0e1893beeb4d0913d26b9614b18aea29c56d94b9",
+    "type": "uniswap_v3",
+    "token0": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "token1": "0xf8a0bf9cf54bb92f17374d9e9a321e6a111a51bd",
+    "fee": 2500,
+    "name": "PancakeSwap V3 WBNB/LINK 0.25%",
+    "tick_spacing": 50
+  }
+]

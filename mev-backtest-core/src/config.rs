@@ -166,7 +166,8 @@ fn default_chains() -> HashMap<String, ChainConfig> {
         },
     );
     let avalanche_factories = vec![
-        "0x9e5A52f57b3038F1B8EeE45F28b3C1960e1fC6b".to_string(), // SushiSwap (Trader Joe uses different)
+        "0x9e5A52f57b3038F1B8EeE45F28b3C1960e1fC6b".to_string(), // SushiSwap
+        "0x9Ad6C38BE94206cA50bb0d90783181662f0Cfa10".to_string(), // Trader Joe V1
     ];
     m.insert(
         "avalanche".to_string(),
@@ -174,7 +175,7 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             chain_id: 43114,
             balancer_vault: Some("0xBA12222222228d8Ba445958a75a0704d566BF2C8".to_string()),
             aave_v3_pool: Some("0x69FA688f1Dc47d4B5d8029D5a35FB7a548E0B9b0".to_string()),
-            uniswap_v3_factory: Some("0x740bDAebB6F93dB927d3bc8E2fE5EDF4343B2925".to_string()),
+            uniswap_v3_factory: Some("0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD".to_string()),
             pools_registry_path: Some("./pools/avalanche.json".to_string()),
             uniswap_v2_factories: Some(avalanche_factories),
             pool_discovery_start_block: None,
@@ -198,6 +199,9 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             pool_discovery_batch_size: None,
         },
     );
+    let arbitrum_factories = vec![
+        "0x6EcCab422D763aC031210895C81787E87B43A652".to_string(), // Camelot V2
+    ];
     m.insert(
         "arbitrum".to_string(),
         ChainConfig {
@@ -206,7 +210,7 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             aave_v3_pool: Some("0x794a61358D6845594F94dc1DB02A252b5b4814aD".to_string()),
             uniswap_v3_factory: Some("0x1F98431c8aD98523631AE4a59f267346ea31F984".to_string()),
             pools_registry_path: Some("./pools/arbitrum.json".to_string()),
-            uniswap_v2_factories: None,
+            uniswap_v2_factories: Some(arbitrum_factories),
             pool_discovery_start_block: None,
             pool_discovery_batch_size: None,
         },

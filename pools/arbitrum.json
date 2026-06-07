@@ -1,0 +1,190 @@
+[
+  {
+    "address": "0xa6c5c7d189fa4eb5af8ba34e63dcdd3a635d433f",
+    "type": "uniswap_v2",
+    "token0": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+    "token1": "0x912ce59144191c1204e64559fe8253a0e49e6548",
+    "fee": 30,
+    "name": "Camelot V2 WETH/ARB"
+  },
+  {
+    "address": "0x84652bb2539513baf36e225c930fdd8eaa63ce27",
+    "type": "uniswap_v2",
+    "token0": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+    "token1": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+    "fee": 30,
+    "name": "Camelot V2 WETH/USDC"
+  },
+  {
+    "address": "0x96059759c6492fb4e8a9777b65f307f2c811a34f",
+    "type": "uniswap_v2",
+    "token0": "0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f",
+    "token1": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+    "fee": 30,
+    "name": "Camelot V2 WBTC/WETH"
+  },
+  {
+    "address": "0x7050a8908e2a60899d8788015148241f0993a3fd",
+    "type": "uniswap_v2",
+    "token0": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+    "token1": "0xf97f4df75117a78c1a5a0dbb814af92458539fb4",
+    "fee": 30,
+    "name": "SushiSwap WETH/LINK"
+  },
+  {
+    "address": "0x8165c70b01b7807351ef0c5ffd3ef010cabc16fb",
+    "type": "uniswap_v2",
+    "token0": "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
+    "token1": "0xff970a61a04b1ca14834a43f5de4533ebddb5cc8",
+    "fee": 30,
+    "name": "SushiSwap USDT/USDC.e"
+  },
+  {
+    "address": "0xcb0e5bfa72bbb4d16ab5aa0c60601c438f04b4ad",
+    "type": "uniswap_v2",
+    "token0": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+    "token1": "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
+    "fee": 30,
+    "name": "SushiSwap WETH/USDT"
+  },
+  {
+    "address": "0x905dfcd5649217c42684f23958568e533c711aa3",
+    "type": "uniswap_v2",
+    "token0": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+    "token1": "0xff970a61a04b1ca14834a43f5de4533ebddb5cc8",
+    "fee": 30,
+    "name": "SushiSwap WETH/USDC.e"
+  },
+  {
+    "address": "0x515e252b2b5c22b4b2b6df66c2ebeea871aa4d69",
+    "type": "uniswap_v2",
+    "token0": "0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f",
+    "token1": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+    "fee": 30,
+    "name": "SushiSwap WBTC/WETH"
+  },
+  {
+    "address": "0xbdee369abf5c3dfff5dc65841e939747ba706a5d",
+    "type": "uniswap_v2",
+    "token0": "0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f",
+    "token1": "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
+    "fee": 30,
+    "name": "SushiSwap WBTC/USDT"
+  },
+  {
+    "address": "0xff13348778cc2ced614f6f73a8e488ac11292f25",
+    "type": "uniswap_v2",
+    "token0": "0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f",
+    "token1": "0xff970a61a04b1ca14834a43f5de4533ebddb5cc8",
+    "fee": 30,
+    "name": "SushiSwap WBTC/USDC.e"
+  },
+  {
+    "address": "0xc6f780497a95e246eb9449f5e4770916dcd6396a",
+    "type": "uniswap_v3",
+    "token0": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+    "token1": "0x912ce59144191c1204e64559fe8253a0e49e6548",
+    "fee": 500,
+    "tick_spacing": 10,
+    "name": "Uniswap V3 WETH/ARB"
+  },
+  {
+    "address": "0x92fd143a8fa0c84e016c2765648b9733b0aa519e",
+    "type": "uniswap_v3",
+    "token0": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+    "token1": "0x912ce59144191c1204e64559fe8253a0e49e6548",
+    "fee": 10000,
+    "tick_spacing": 200,
+    "name": "Uniswap V3 WETH/ARB"
+  },
+  {
+    "address": "0x13398e27a21be1218b6900cbedf677571df42a48",
+    "type": "uniswap_v3",
+    "token0": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+    "token1": "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
+    "fee": 500,
+    "tick_spacing": 10,
+    "name": "Uniswap V3 USDC/USDT"
+  },
+  {
+    "address": "0x0e4831319a50228b9e450861297ab92dee15b44f",
+    "type": "uniswap_v3",
+    "token0": "0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f",
+    "token1": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+    "fee": 500,
+    "tick_spacing": 10,
+    "name": "Uniswap V3 WBTC/USDC"
+  },
+  {
+    "address": "0x5969efdde3cf5c0d9a88ae51e47d721096a97203",
+    "type": "uniswap_v3",
+    "token0": "0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f",
+    "token1": "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
+    "fee": 500,
+    "tick_spacing": 10,
+    "name": "Uniswap V3 WBTC/USDT"
+  },
+  {
+    "address": "0x2f5e87c9312fa29aed5c179e456625d79015299c",
+    "type": "uniswap_v3",
+    "token0": "0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f",
+    "token1": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+    "fee": 500,
+    "tick_spacing": 10,
+    "name": "Uniswap V3 WBTC/WETH"
+  },
+  {
+    "address": "0xa62ad78825e3a90f0b30725df802e7818a7d79c2",
+    "type": "uniswap_v3",
+    "token0": "0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f",
+    "token1": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+    "fee": 3000,
+    "tick_spacing": 60,
+    "name": "Uniswap V3 WBTC/WETH"
+  },
+  {
+    "address": "0x6387b0d5853184645cc9a77d6db133355d2eb4e4",
+    "type": "uniswap_v3",
+    "token0": "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1",
+    "token1": "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
+    "fee": 500,
+    "tick_spacing": 10,
+    "name": "Uniswap V3 DAI/USDT"
+  },
+  {
+    "address": "0xc6962004f452be9203591991d15f6b388e09e8d0",
+    "type": "uniswap_v3",
+    "token0": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+    "token1": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+    "fee": 500,
+    "tick_spacing": 10,
+    "name": "Uniswap V3 WETH/USDC"
+  },
+  {
+    "address": "0x641c00a822e8b671738d32a431a4fb6074e5c79d",
+    "type": "uniswap_v3",
+    "token0": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+    "token1": "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
+    "fee": 500,
+    "tick_spacing": 10,
+    "name": "Uniswap V3 WETH/USDT"
+  },
+  {
+    "address": "0xc31e54c7a869b9fcbecc14363cf510d1c41fa443",
+    "type": "uniswap_v3",
+    "token0": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+    "token1": "0xff970a61a04b1ca14834a43f5de4533ebddb5cc8",
+    "fee": 500,
+    "tick_spacing": 10,
+    "name": "Uniswap V3 WETH/USDC.e"
+  },
+  {
+    "address": "0x17c14d2c404d167802b16c450d3c99f88f2c4f4d",
+    "type": "uniswap_v3",
+    "token0": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+    "token1": "0xff970a61a04b1ca14834a43f5de4533ebddb5cc8",
+    "fee": 3000,
+    "tick_spacing": 60,
+    "name": "Uniswap V3 WETH/USDC.e"
+  }
+]
