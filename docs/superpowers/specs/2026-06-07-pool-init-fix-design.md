@@ -25,38 +25,39 @@ fn fetch_v2_reserves(rpc, pool, block):
 
 ### V2 storage layout (slot 6)
 
-Uniswap V2 pairs store reserves as a packed struct at **slot 6**:
+Uniswap V2 pairs store reserves as a packed struct at **slot 6**.
+Solidity packs struct members from the least significant byte (LSB).
 
 ```
 struct: uint112 reserve0 | uint112 reserve1 | uint32 blockTimestampLast
 ```
 
-In storage (big-endian bytes, 32 bytes):
-- Bytes 0-13 (14 bytes, high bits): `reserve0`
-- Bytes 14-27 (14 bytes, middle bits): `reserve1`
-- Bytes 28-31 (4 bytes, low bits): `blockTimestampLast`
+In big-endian bytes (byte[0] = MSB, byte[31] = LSB):
+- Bytes 18-31 (14 bytes): `reserve0` (lowest 112 bits)
+- Bytes 4-17 (14 bytes): `reserve1` (middle 112 bits)
+- Bytes 0-3 (4 bytes): `blockTimestampLast` (highest 32 bits)
 
 Decoding:
 ```
-r0 = u128.from_be_bytes(raw[0..14])        // high 112 bits
-r1 = u128.from_be_bytes(raw[14..28])       // middle 112 bits
-ts = u32.from_be_bytes(raw[28..32])        // low 32 bits
+r0 = u128.from_be_bytes(raw[18..32])       // low 112 bits
+r1 = u128.from_be_bytes(raw[4..18])        // middle 112 bits
+ts = u32.from_be_bytes(raw[0..4])          // high 32 bits
 ```
 
 ### V3 storage layout (slot 0 + slot 1)
 
 Uniswap V3 pool stores its global state at:
 
-- **Slot 0** — `slot0`: `sqrtPriceX96 (uint160) | tick (int24) | observationIndex (uint16) | observationCardinality (uint16) | observationCardinalityNext (uint16) | feeProtocol (uint8) | unlocked (bool)`
-  - Bytes 0-19: `sqrtPriceX96` (U256 from 32 bytes)
-  - Bytes 20-22: `tick` (int24, sign-extended to i32)
-- **Slot 1** — `liquidity (uint128)` — packed into lower 16 bytes
+- **Slot 0** — struct packed from LSB: `sqrtPriceX96 (uint160, 20 bytes | bits 0..159) | tick (int24, 3 bytes | bits 160..183) | observationIndex (uint16) | observationCardinality (uint16) | observationCardinalityNext (uint16) | feeProtocol (uint8) | unlocked (bool)`
+  - Bytes 12-31 (big-endian): `sqrtPriceX96` (lowest 160 bits)
+  - Bytes 9-11: `tick` (3 bytes as int24, sign-extended to i32)
+- **Slot 1** — `liquidity (uint128)` — lower 128 bits of the slot
 
 Decoding:
 ```
-sqrt_price_x96 = U256.from_be_bytes(raw[0..32])      // top 160 bits = our value
-tick = i32.from_be_bytes([raw[20], raw[21], raw[22], sign_byte])
-liquidity = u128.from_be_bytes(raw[16..32])          // lower 128 bits of slot 1
+sqrt_price_x96 = U256.from_be_bytes(raw[12..32])      // low 160 bits as U256
+tick = i32.from_be_bytes([sign_byte, raw[9], raw[10], raw[11]])
+liquidity = u128.from_be_bytes(raw[16..32])           // lower 128 bits of slot 1
 ```
 
 ### Code changes
