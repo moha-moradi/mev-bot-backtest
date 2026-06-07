@@ -81,6 +81,7 @@ impl TwoHopArbDetector {
             expected_profit: U256::from(result.profit),
             gas_cost_wei,
             timestamp,
+            path: None,
         })
     }
 }

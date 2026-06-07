@@ -27,6 +27,9 @@ pub struct MevOpportunity {
     pub gas_cost_wei: u128,
     /// Timestamp of the block
     pub timestamp: u64,
+    /// Full pool path for multi-hop opportunities (e.g., [buy, intermediate, ..., sell])
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<Vec<Address>>,
 }
 
 /// Saved results file wrapping opportunities with run metadata.
@@ -42,4 +45,37 @@ pub struct ResultsFile {
     pub resolved_at: u64,
     pub created_at: u64,
     pub opportunities: Vec<MevOpportunity>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::U256;
+
+    #[test]
+    fn test_mev_opportunity_path_roundtrip() {
+        use alloy::primitives::address;
+        let opp = MevOpportunity {
+            block_number: 1,
+            tx_index: 0,
+            strategy: Strategy::MultiHopArb,
+            pool_a: address!("1111111111111111111111111111111111111111"),
+            pool_b: address!("3333333333333333333333333333333333333333"),
+            token_in: address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            token_out: address!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+            input_amount: U256::from(1000u64),
+            expected_profit: U256::from(100u64),
+            gas_cost_wei: 1_000_000,
+            timestamp: 12345,
+            path: Some(vec![
+                address!("1111111111111111111111111111111111111111"),
+                address!("2222222222222222222222222222222222222222"),
+                address!("3333333333333333333333333333333333333333"),
+            ]),
+        };
+        let json = serde_json::to_string(&opp).unwrap();
+        let deserialized: MevOpportunity = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.path, opp.path);
+        assert!(json.contains("\"path\""));
+    }
 }
