@@ -12,6 +12,7 @@ use crate::data::ExecutedLog;
 use crate::pool::decoders;
 use crate::pool::dex_type::DexType;
 use crate::rpc::RpcClient;
+use crate::utils::u128_from_be_bytes;
 
 /// Static pool information loaded from the registry JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -675,13 +676,6 @@ impl Default for PoolManager {
     }
 }
 
-fn u128_from_be_bytes(bytes: &[u8]) -> u128 {
-    let mut buf = [0u8; 16];
-    let start = bytes.len().saturating_sub(16);
-    buf.copy_from_slice(&bytes[start..start + 16]);
-    u128::from_be_bytes(buf)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1061,21 +1055,6 @@ mod tests {
         pm.add_pool(make_v2_pool(addr, usdc(), wmatic(), 1000, 2000));
         pm.get_mut(&addr).unwrap().info_mut().fee = 100;
         assert_eq!(pm.get(&addr).unwrap().info().fee, 100);
-    }
-
-    // ---- u128_from_be_bytes helper ----
-
-    #[test]
-    fn test_u128_from_be_bytes_basic() {
-        let mut buf = [0u8; 32];
-        buf[16..32].copy_from_slice(&1000u128.to_be_bytes());
-        assert_eq!(super::u128_from_be_bytes(&buf), 1000);
-    }
-
-    #[test]
-    fn test_u128_from_be_bytes_zero() {
-        let buf = [0u8; 32];
-        assert_eq!(super::u128_from_be_bytes(&buf), 0);
     }
 
     // ---- decode_v2_reserves_from_storage ----
