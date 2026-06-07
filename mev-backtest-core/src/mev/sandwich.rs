@@ -4,6 +4,7 @@ use crate::data::ExecutedLog;
 use crate::mev::opportunity::MevOpportunity;
 use crate::pool::state::PoolManager;
 use crate::types::Strategy;
+use crate::utils::u128_from_be_bytes;
 
 /// Uniswap V2 Swap event topic
 const V2_SWAP_TOPIC: B256 =
@@ -57,10 +58,10 @@ impl SandwichDetector {
                 continue;
             }
 
-            let amt0_in = u128_from_be_bytes_32(&log.data[..32]);
-            let amt1_in = u128_from_be_bytes_32(&log.data[32..64]);
-            let amt0_out = u128_from_be_bytes_32(&log.data[64..96]);
-            let amt1_out = u128_from_be_bytes_32(&log.data[96..128]);
+            let amt0_in = u128_from_be_bytes(&log.data[..32]);
+            let amt1_in = u128_from_be_bytes(&log.data[32..64]);
+            let amt0_out = u128_from_be_bytes(&log.data[64..96]);
+            let amt1_out = u128_from_be_bytes(&log.data[96..128]);
 
             let (direction, amount_in, amount_out) =
                 if amt0_in > 0 && amt1_out > 0 {
@@ -151,13 +152,6 @@ impl SandwichDetector {
 
         opportunities
     }
-}
-
-fn u128_from_be_bytes_32(bytes: &[u8]) -> u128 {
-    let start = bytes.len().saturating_sub(16);
-    let mut buf = [0u8; 16];
-    buf.copy_from_slice(&bytes[start..start + 16]);
-    u128::from_be_bytes(buf)
 }
 
 #[cfg(test)]
