@@ -82,6 +82,9 @@ impl TwoHopArbDetector {
             gas_cost_wei,
             timestamp,
             path: None,
+            tick_lower: None,
+            tick_upper: None,
+            liquidity_amount: None,
         })
     }
 }

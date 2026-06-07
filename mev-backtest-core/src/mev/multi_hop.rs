@@ -175,6 +175,9 @@ impl MultiHopArbDetector {
             gas_cost_wei,
             timestamp,
             path: Some(path.to_vec()),
+            tick_lower: None,
+            tick_upper: None,
+            liquidity_amount: None,
         })
     }
 
@@ -284,7 +287,7 @@ mod tests {
         assert!(!opps.is_empty(), "Should detect triangular arb");
 
         let paths_3: Vec<_> = opps.iter().filter(|o| o.path.as_ref().map(|p| p.len() >= 3).unwrap_or(false)).collect();
-        assert!(paths_3.len() >= 1, "Should have at least one 3-pool path");
+        assert!(!paths_3.is_empty(), "Should have at least one 3-pool path");
 
         for opp in paths_3 {
             assert!(opp.expected_profit > U256::ZERO);
