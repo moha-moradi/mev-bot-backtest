@@ -231,6 +231,75 @@ mev-backtest discover -n polygon \
 
 ---
 
+## Examples
+
+### Basic run on Polygon (last 100 blocks)
+```bash
+mev-backtest run --blocks 100 --chain polygon
+```
+
+### Run with custom gas settings
+```bash
+mev-backtest run --block 50000000 \
+  --gas-limit 300000 \
+  --priority-fee 2.0 \
+  --gas-model p90
+```
+
+### Run with specific strategies
+```bash
+mev-backtest run --days 7 --strategies "two_hop_arb,multi_hop_arb"
+```
+
+### Run multi-hop arbitrage only (Polygon archive node)
+```bash
+mev-backtest run --blocks 1000 --chain polygon --strategies multi_hop_arb
+```
+
+### Fetch block data first, then run backtest
+```bash
+mev-backtest fetch --days 30 --chain polygon
+mev-backtest run --days 30 --chain polygon
+```
+
+### Replay a specific block for debugging
+```bash
+mev-backtest replay --block 50000000 --chain polygon
+```
+
+### Report from saved JSON results
+```bash
+mev-backtest report
+mev-backtest report --output csv
+mev-backtest report --run-id run_1718000000
+```
+
+### Discover pools on a new chain
+```bash
+mev-backtest discover \
+  --chain polygon \
+  --v2-factories 0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32 \
+  --from-block 0 --to-block 50000000 \
+  --save
+```
+
+### Full TOML configuration
+Create `mev-backtest.toml`:
+```toml
+chain = "polygon"
+rpc_url = "https://polygon-rpc.com"
+flash_loan_provider = "auto"
+strategies = "all"
+gas_model = "historical_exact"
+gas_limit = 200000
+priority_fee_gwei = 0.0
+output = "table"
+export_path = "./results"
+cache_dir = "./cache"
+```
+
+---
+
 ## Configuration
 
 The engine uses a three-layer configuration model:
@@ -329,7 +398,7 @@ Seven chains are preconfigured with chain IDs, contract addresses, factory addre
    - Builds a revm execution context with `CachedRpcDb` — a lazy-loading database that checks cache first, then falls back to RPC.
    - **Transaction filter:** For each tx, checks if the `to` address or any log emitter address is a tracked pool or token. If not, skips EVM execution and builds the result directly from the cached receipt (fast path). In `--fast-mode`, only pool addresses are matched (tokens are skipped).
    - After each tx, processes Swap and Sync events to update pool reserves.
-   - Runs `TwoHopArbDetector` on the updated pool state.
+   - Runs `TwoHopArbDetector` and `MultiHopArbDetector` on the updated pool state.
    - Detected opportunities are collected per-block.
 9. **Result Reporting** — Prints a table with columns: Block, Tx Index, Strategy, Profit (USD), Gas (USD), Net (USD). Can also export to CSV or JSON.
 
@@ -362,6 +431,25 @@ Discovers arbitrage opportunities between pairs of Uniswap V2-style constant-pro
   - Direction 1: buy the shared token from pool A, sell to pool B.
   - Direction 2: buy the shared token from pool B, sell to pool A.
 - **Optimal input search** via ternary search (80 iterations) over the concave profit function to find the input amount that maximizes profit.
+
+### Multi-Hop Arbitrage Detection
+
+Discovers N-pool (3+) arbitrage opportunities by enumerating pool paths through the token-pool graph.
+
+- BFS-limited walk up to depth 4, seeded from existing arbitrage pairs in both directions.
+- For each path, a composed quote function chains per-pool quoting through all pools.
+- `optimal_n_hop_generic` ternary search finds the optimal input amount for any N-pool chain.
+- Both Uniswap V2 (constant-product) and V3 (concentrated liquidity) pools are supported.
+- Paths are stored in the optional `path` field on `MevOpportunity`.
+
+### Performance
+
+MultiHopArb enumerates all pool paths up to depth 4. For Polygon (~100 pools), this evaluates ~1,600 paths per block, each running 80 iterations of ternary search. Expected overhead: 50–200ms per block.
+
+To reduce detection time:
+- Use `--strategies two_hop_arb` to skip multi-hop detection.
+- Reduce path depth (hardcoded default: 4).
+- Fewer pools = faster detection (use a slim pool registry).
 
 ### AMM Math
 
@@ -529,4 +617,4 @@ If the config file doesn't exist, the engine uses built-in defaults. This is not
 
 ### Strategies not detected
 
-Currently only `two_hop_arb` is fully implemented. Other strategies (`multi_hop_arb`, `jit`, `jit_arb`, `sandwich`) are parsed and accepted but produce no opportunities. Selecting `"all"` is safe and equivalent to running `two_hop_arb`.
+`two_hop_arb` and `multi_hop_arb` are fully implemented. Other strategies (`jit`, `jit_arb`, `sandwich`) are parsed and accepted but produce no opportunities. Selecting `"all"` is safe and runs both `two_hop_arb` and `multi_hop_arb` detection.
