@@ -328,7 +328,7 @@ Cache dir:       {}
 "#,
             chain_name,
             chain_cfg.chain_id,
-            &self.effective_rpc_url(chain_name),
+            self.effective_rpc_url(chain_name),
             range_mode,
             range_mode.resolve_description(),
             strat_list,

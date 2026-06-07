@@ -266,9 +266,9 @@ async fn test_e2e_v3_swap_decoding() {
     // Verify all fields are non-zero and reasonable
     assert!(!decoded.sqrt_price_x96.is_zero(), "sqrt_price_x96 should be non-zero");
     assert!(decoded.liquidity > 0, "liquidity should be positive");
-    // tick should be in range for ETH/USDC pool (typically non-zero)
-    assert!(decoded.tick > -100000 && decoded.tick < 100000,
-        "tick should be in reasonable range, got {}", decoded.tick);
+    // tick should be in Uniswap V3 range (-887272 to 887272)
+    assert!(decoded.tick > -887272 && decoded.tick < 887272,
+        "tick should be in valid Uniswap V3 range, got {}", decoded.tick);
 
     eprintln!("PASS: decoded V3 Swap: sqrt={}, liq={}, tick={} (block={})",
         decoded.sqrt_price_x96, decoded.liquidity, decoded.tick, logs[0].block_number.unwrap_or(0));

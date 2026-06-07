@@ -232,9 +232,10 @@ impl RangeMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum GasModel {
     #[serde(rename = "historical_exact")]
+    #[default]
     HistoricalExact,
     #[serde(rename = "p90")]
     P90,
@@ -249,12 +250,6 @@ impl fmt::Display for GasModel {
             GasModel::P90 => write!(f, "p90"),
             GasModel::Fixed => write!(f, "fixed"),
         }
-    }
-}
-
-impl Default for GasModel {
-    fn default() -> Self {
-        GasModel::HistoricalExact
     }
 }
 

@@ -71,7 +71,7 @@ pub struct BlockRangeArgs {
 #[derive(Args, Debug, Clone)]
 #[command(next_help_heading = "Chain & Connection")]
 pub struct ChainArgs {
-    /// Chain name: polygon, avalanche, bsc, arbitrum, base
+    /// Chain name: polygon, avalanche, bsc, arbitrum, base, ethereum, optimism
     #[arg(short = 'n', long, default_value = "polygon", value_name = "NAME")]
     pub chain: String,
 

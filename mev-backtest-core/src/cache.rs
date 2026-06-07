@@ -200,7 +200,7 @@ impl CacheStore {
                 }
             }
         }
-        results.sort_by(|a, b| b.1.resolved_at.cmp(&a.1.resolved_at));
+        results.sort_by_key(|b| std::cmp::Reverse(b.1.resolved_at));
         Ok(results)
     }
 

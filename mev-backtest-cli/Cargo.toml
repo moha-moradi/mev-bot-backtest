@@ -3,6 +3,10 @@ name = "mev-backtest-cli"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "mev-backtest"
+path = "src/main.rs"
+
 [dependencies]
 mev-backtest-core = { path = "../mev-backtest-core" }
 clap = { version = "4", features = ["derive"] }
