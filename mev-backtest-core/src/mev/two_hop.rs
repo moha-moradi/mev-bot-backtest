@@ -85,6 +85,8 @@ impl TwoHopArbDetector {
             tick_lower: None,
             tick_upper: None,
             liquidity_amount: None,
+            victim_tx_index: None,
+            backrun_tx_index: None,
         })
     }
 }

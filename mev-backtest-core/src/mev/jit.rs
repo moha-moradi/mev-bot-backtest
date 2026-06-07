@@ -177,6 +177,8 @@ impl JitDetector {
             tick_lower: Some(mint.tick_lower),
             tick_upper: Some(mint.tick_upper),
             liquidity_amount: Some(mint.amount),
+            victim_tx_index: None,
+            backrun_tx_index: None,
         }
     }
 }

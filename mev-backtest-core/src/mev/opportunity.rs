@@ -39,6 +39,12 @@ pub struct MevOpportunity {
     /// Amount of liquidity deployed (JIT positions)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub liquidity_amount: Option<u128>,
+    /// Transaction index of the victim's swap (sandwich attacks)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub victim_tx_index: Option<usize>,
+    /// Transaction index of the backrun (sandwich attacks)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backrun_tx_index: Option<usize>,
 }
 
 /// Saved results file wrapping opportunities with run metadata.
@@ -84,6 +90,8 @@ mod tests {
             tick_lower: None,
             tick_upper: None,
             liquidity_amount: None,
+            victim_tx_index: None,
+            backrun_tx_index: None,
         };
         let json = serde_json::to_string(&opp).unwrap();
         let deserialized: MevOpportunity = serde_json::from_str(&json).unwrap();
@@ -110,6 +118,8 @@ mod tests {
             tick_lower: Some(-88720),
             tick_upper: Some(88720),
             liquidity_amount: Some(500_000u128),
+            victim_tx_index: None,
+            backrun_tx_index: None,
         };
         let json = serde_json::to_string(&opp).unwrap();
         let deserialized: MevOpportunity = serde_json::from_str(&json).unwrap();
@@ -131,5 +141,44 @@ mod tests {
         assert!(!json_no.contains("tick_lower"));
         assert!(!json_no.contains("tick_upper"));
         assert!(!json_no.contains("liquidity_amount"));
+    }
+
+    #[test]
+    fn test_mev_opportunity_sandwich_fields_roundtrip() {
+        use alloy::primitives::address;
+        let opp = MevOpportunity {
+            block_number: 1,
+            tx_index: 0,
+            strategy: Strategy::Sandwich,
+            pool_a: address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            pool_b: Address::ZERO,
+            token_in: address!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+            token_out: address!("cccccccccccccccccccccccccccccccccccccccc"),
+            input_amount: U256::from(1000),
+            expected_profit: U256::from(500),
+            gas_cost_wei: 0,
+            timestamp: 12345,
+            path: None,
+            tick_lower: None,
+            tick_upper: None,
+            liquidity_amount: None,
+            victim_tx_index: Some(1),
+            backrun_tx_index: Some(2),
+        };
+        let json = serde_json::to_string(&opp).unwrap();
+        let deserialized: MevOpportunity = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.victim_tx_index, Some(1));
+        assert_eq!(deserialized.backrun_tx_index, Some(2));
+        assert!(json.contains("\"victim_tx_index\""));
+        assert!(json.contains("\"backrun_tx_index\""));
+
+        // Verify fields are absent from serde output when None
+        let no_sandwich = MevOpportunity {
+            victim_tx_index: None,
+            backrun_tx_index: None,
+            ..opp
+        };
+        let json_no = serde_json::to_string(&no_sandwich).unwrap();
+        assert!(!json_no.contains("victim_tx_index"));
     }
 }
