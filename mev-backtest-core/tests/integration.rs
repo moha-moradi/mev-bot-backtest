@@ -262,3 +262,75 @@ fn test_two_hop_v3_reserves_update_accuracy() {
     // At minimum should not panic or crash
     assert!(opps.len() <= 2, "At most 2 opportunities");
 }
+
+#[test]
+fn test_multi_hop_detection_three_pool() {
+    use mev_backtest_core::mev::multi_hop::MultiHopArbDetector;
+
+    let mut pm = PoolManager::new();
+
+    // Triangular arb: USDC → WMATIC → USDT → USDC
+    // Pool A: USDC/WMATIC (WMATIC cheap: 0.5 USDC each)
+    // Pool B: WMATIC/USDT (WMATIC expensive: 2 USDT each)
+    // Pool C: USDC/USDT (1:1)
+    pm.add_pool(make_pool(
+        matic_usdc_pool(), usdc(), wmatic(),
+        1_000_000, 2_000_000,
+    ));
+    pm.add_pool(make_pool(
+        matic_usdt_pool(), usdt(), wmatic(),
+        1_000_000, 500_000,
+    ));
+    // Third pool: USDC/USDT (different addresses for test)
+    let usdc_usdt_pool = address!("3333333333333333333333333333333333333333");
+    pm.add_pool(make_pool(
+        usdc_usdt_pool, usdc(), usdt(),
+        1_000_000, 1_000_000,
+    ));
+
+    let opps = MultiHopArbDetector::detect(
+        &pm, 1, 0, 12345, 50_000_000_000, GasConfig::default(),
+    );
+
+    assert!(!opps.is_empty(), "Should detect multi-hop arb");
+
+    // Find a 3-pool opportunity
+    let three_hop: Vec<_> = opps.iter().filter(|o| {
+        o.path.as_ref().map(|p| p.len() >= 3).unwrap_or(false)
+    }).collect();
+    assert!(!three_hop.is_empty(), "Should detect a 3-pool arb");
+
+    for opp in &opps {
+        assert_eq!(opp.strategy, Strategy::MultiHopArb);
+        assert!(opp.expected_profit > U256::ZERO);
+        assert!(opp.gas_cost_wei > 0);
+    }
+}
+
+#[test]
+fn test_multi_hop_path_field_populated() {
+    use mev_backtest_core::mev::multi_hop::MultiHopArbDetector;
+
+    let mut pm = PoolManager::new();
+    pm.add_pool(make_pool(
+        matic_usdc_pool(), usdc(), wmatic(),
+        1_000_000, 2_000_000,
+    ));
+    pm.add_pool(make_pool(
+        matic_usdt_pool(), usdt(), wmatic(),
+        1_000_000, 500_000,
+    ));
+
+    let opps = MultiHopArbDetector::detect(
+        &pm, 1, 0, 12345, 50_000_000_000, GasConfig::default(),
+    );
+
+    assert!(!opps.is_empty());
+    for opp in &opps {
+        assert!(opp.path.is_some(), "MultiHopArb must have path populated");
+        let path = opp.path.as_ref().unwrap();
+        assert_eq!(path.len(), 2, "Two-pool path should have length 2");
+        assert_eq!(path[0], opp.pool_a);
+        assert_eq!(path[path.len() - 1], opp.pool_b);
+    }
+}

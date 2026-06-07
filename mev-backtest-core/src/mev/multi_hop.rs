@@ -39,11 +39,14 @@ impl MultiHopArbDetector {
     pub fn find_paths(pm: &PoolManager, max_depth: usize) -> Vec<Vec<Address>> {
         let mut all_paths = Vec::new();
 
-        // Seed 2-pool paths from existing arbitrage pairs
+        // Seed 2-pool paths from existing arbitrage pairs (both directions)
         for &(pool_a, pool_b, _shared) in &pm.arbitrage_pairs() {
             let seed = vec![pool_a, pool_b];
             all_paths.push(seed.clone());
             Self::extend_path(pm, seed, &mut all_paths, max_depth);
+            let rev = vec![pool_b, pool_a];
+            all_paths.push(rev.clone());
+            Self::extend_path(pm, rev, &mut all_paths, max_depth);
         }
 
         all_paths
