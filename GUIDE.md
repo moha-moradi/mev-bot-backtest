@@ -96,27 +96,23 @@ mev-backtest run [OPTIONS]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--strategies <LIST>` | `all` | Comma-separated strategy list or `all`. Available: `two_hop_arb`, `multi_hop_arb`, `jit`, `jit_arb`, `sandwich`. |
+| `--strategies <LIST>` | `all` | Comma-separated strategy list or `all`. Available: `two_hop_arb`, `multi_hop_arb`, `jit`, `jit_arb`, `sandwich`. `two_hop_arb`, `multi_hop_arb`, and `jit` are implemented. |
 
 **Gas model:**
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--gas-model <MODEL>` | `historical_exact` | `historical_exact` (use actual base fee from block), `p90`, or `fixed`. |
-| `--priority-fee <GWEI>` | `1.0` | Priority fee premium in gwei, added on top of the base fee. |
-| `--coinbase-bribe <PERCENT>` | `10` | Percentage of gross profit to pay as validator tip (0–100). |
+| `--priority-fee <GWEI>` | `0.0` | Priority fee premium in gwei, added on top of the base fee. |
 | `--gas-limit <GAS>` | `200000` | Gas limit for arb transaction cost estimation. |
 
 **Output:**
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--min-profit-usd <USD>` | `0.0` | Minimum profit threshold in USD. Opportunities below this are filtered out. |
 | `--output <FORMAT>` | `table` | Output format: `table`, `csv`, `json`. |
 | `--export-path <PATH>` | `./results` | Directory for CSV/JSON exports. |
 | `--cache-dir <PATH>` | `./cache` | Block/state cache directory (sled database). |
-| `--parallelism <N>` | CPU cores | Maximum concurrent block fetch/replay workers. |
-| `--fast-mode` | off | Skip token address widening in the transaction filter. Faster but may miss state changes affecting token prices. |
 
 **Example:**
 
@@ -442,6 +438,32 @@ Discovers N-pool (3+) arbitrage opportunities by enumerating pool paths through 
 - Both Uniswap V2 (constant-product) and V3 (concentrated liquidity) pools are supported.
 - Paths are stored in the optional `path` field on `MevOpportunity`.
 
+### JIT Liquidity Detection
+
+The JIT (Just-In-Time) liquidity detector identifies Uniswap V3 positions where an LP:
+1. Mints concentrated liquidity in a specific tick range (Mint)
+2. A swapper trades against this liquidity (Swap)
+3. The LP removes the position (Burn)
+
+This happens within the same block — the LP uses transaction ordering to capture swap fees without providing meaningful liquidity.
+
+**Patterns detected:**
+- **Full JIT** (Mint → Swap → Burn): Strong signal — LP deployed, captured fees, and removed
+- **Partial JIT** (Mint → Swap): Moderate signal — liquidity deployed and traded against, but not yet removed
+
+**Output fields:**
+- `strategy`: `"jit"`
+- `pool_a`: The V3 pool where JIT occurred
+- `tick_lower`, `tick_upper`: The concentrated tick range
+- `liquidity_amount`: Amount of liquidity deployed
+
+Note: JIT detection is always active when running backtests. No separate CLI flag is needed — the detector runs alongside arbitrage detectors and emits opportunities when patterns are found.
+
+**Current limitations:**
+- Expected profit and gas cost are not estimated (set to 0 in v1)
+- Only V3 concentrated liquidity pools are monitored
+- Requires a complete block replay (not snapshot-based)
+
 ### Performance
 
 MultiHopArb enumerates all pool paths up to depth 4. For Polygon (~100 pools), this evaluates ~1,600 paths per block, each running 80 iterations of ternary search. Expected overhead: 50–200ms per block.
@@ -617,4 +639,4 @@ If the config file doesn't exist, the engine uses built-in defaults. This is not
 
 ### Strategies not detected
 
-`two_hop_arb` and `multi_hop_arb` are fully implemented. Other strategies (`jit`, `jit_arb`, `sandwich`) are parsed and accepted but produce no opportunities. Selecting `"all"` is safe and runs both `two_hop_arb` and `multi_hop_arb` detection.
+`two_hop_arb`, `multi_hop_arb`, and `jit` are implemented. Other strategies (`jit_arb`, `sandwich`) are parsed and accepted but produce no opportunities. Selecting `"all"` is safe and runs both `two_hop_arb` and `multi_hop_arb` detection.
