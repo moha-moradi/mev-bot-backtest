@@ -138,6 +138,58 @@ fn simulate_two_hop(
     })
 }
 
+/// General N-hop ternary search optimizer.
+///
+/// `quote_fn(x)` returns the output amount for input `x` through the entire pool chain.
+/// Returns `Some((optimal_input, output_amount))` or `None` if no profitable path found.
+pub fn optimal_n_hop_generic(
+    max_input: u128,
+    quote_fn: &impl Fn(u128) -> Option<u128>,
+) -> Option<(u128, u128)> {
+    if max_input == 0 {
+        return None;
+    }
+
+    let mut lo = 0u128;
+    let mut hi = max_input;
+    let mut best: Option<(u128, u128)> = None;
+
+    for _ in 0..80 {
+        let m1 = lo + (hi - lo) / 3;
+        let m2 = hi - (hi - lo) / 3;
+
+        if m1 == m2 {
+            break;
+        }
+
+        let o1 = quote_fn(m1);
+        let o2 = quote_fn(m2);
+
+        match (o1, o2) {
+            (None, None) => break,
+            (Some(_), None) => hi = m2,
+            (None, Some(_)) => lo = m1,
+            (Some(r1), Some(r2)) => {
+                let p1 = r1.saturating_sub(m1);
+                let p2 = r2.saturating_sub(m2);
+                if p1 >= p2 {
+                    hi = m2;
+                    if p1 > 0 {
+                        best = Some((m1, r1));
+                    }
+                } else {
+                    lo = m1;
+                    if p2 > 0 {
+                        best = Some((m2, r2));
+                    }
+                }
+            }
+        }
+    }
+
+    best
+}
+
 /// Find the optimal input amount for a two-hop arbitrage using generic quoting functions.
 ///
 /// `quote_a(x)`: returns the amount of bridge token received from pool A when spending `x` of token_in.
@@ -294,5 +346,56 @@ mod tests {
         let quote_a = |_: u128| Some(0u128);
         let quote_b = |_: u128| Some(0u128);
         assert!(optimal_two_hop_arb_generic(0, &quote_a, &quote_b).is_none());
+    }
+
+    #[test]
+    fn test_optimal_n_hop_generic_two_step_matches_two_hop() {
+        // Pool A: 1M USDC / 2M WMATIC (WMATIC cheap: 0.5 USDC)
+        // Pool B: 0.5M WMATIC / 1M USDT (WMATIC dear: 2 USDT)
+        let reserve_a_in = 1_000_000u128;
+        let reserve_a_out = 2_000_000u128;
+        let fee_a = 30;
+        let reserve_b_in = 500_000u128;
+        let reserve_b_out = 1_000_000u128;
+        let fee_b = 30;
+
+        let quote_2hop = |x: u128| {
+            let mid = constant_product_output_amount(x, reserve_a_in, reserve_a_out, fee_a)?;
+            constant_product_output_amount(mid, reserve_b_in, reserve_b_out, fee_b)
+        };
+
+        let max_input = 1_000_000u128;
+        let n_result = optimal_n_hop_generic(max_input, &quote_2hop);
+        assert!(n_result.is_some());
+        let (input, output) = n_result.unwrap();
+        assert!(output > input);
+    }
+
+    #[test]
+    fn test_optimal_n_hop_generic_no_profit() {
+        let quote_flat = |x: u128| -> Option<u128> { Some(x) };
+        assert!(optimal_n_hop_generic(1_000_000, &quote_flat).is_none());
+    }
+
+    #[test]
+    fn test_optimal_n_hop_generic_zero_max_input() {
+        let quote = |x: u128| -> Option<u128> { Some(x + 1) };
+        assert!(optimal_n_hop_generic(0, &quote).is_none());
+    }
+
+    #[test]
+    fn test_optimal_n_hop_generic_three_step() {
+        let q1 = |x: u128| -> Option<u128> { Some(x * 2) };
+        let q2 = |x: u128| -> Option<u128> { Some(x * 3) };
+        let q3 = |x: u128| -> Option<u128> { Some(x / 2) };
+        let chain = |x: u128| -> Option<u128> {
+            let a = q1(x)?;
+            let b = q2(a)?;
+            q3(b)
+        };
+        let result = optimal_n_hop_generic(1_000_000, &chain);
+        assert!(result.is_some());
+        let (input, output) = result.unwrap();
+        assert!(output >= input * 3);
     }
 }
