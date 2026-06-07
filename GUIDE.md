@@ -96,7 +96,7 @@ mev-backtest run [OPTIONS]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--strategies <LIST>` | `all` | Comma-separated strategy list or `all`. Available: `two_hop_arb`, `multi_hop_arb`, `jit`, `jit_arb`, `sandwich`. `two_hop_arb`, `multi_hop_arb`, and `jit` are implemented. |
+| `--strategies <LIST>` | `all` | Comma-separated strategy list or `all`. Available: `two_hop_arb`, `multi_hop_arb`, `jit`, `jit_arb`, `sandwich`. `two_hop_arb`, `multi_hop_arb`, `jit`, and `jit_arb` are implemented. Only `sandwich` is parsed but not yet implemented. |
 
 **Gas model:**
 
@@ -497,6 +497,31 @@ Note: Sandwich detection is always active when running backtests. No separate CL
 - Only detects strict consecutive triples on the same pool (no gap handling)
 - Does not verify actual price impact — relies on direction matching
 
+### JIT Arbitrage (JitArb) Detection
+
+The JitArb detector identifies a combination strategy where the same EOA:
+1. Mints concentrated liquidity on a V3 pool (Mint)
+2. Swaps through the JIT pool and a different pool sharing a token (Swap)
+3. Captures both swap fees and arbitrage profit within the same block
+
+This differs from standalone JIT liquidity detection: JitArb specifically requires cross-pool arbitrage trading by the liquidity deployer, not just any swap hitting the position.
+
+**Pattern detected:**
+- Mint on pool P + Swap on pool P + Swap on pool Q (tokens shared) by same sender
+
+**Output fields:**
+- `strategy`: `"jit_arb"`
+- `pool_a`: The V3 pool where JIT was deployed
+- `pool_b`: The other pool in the arbitrage
+- `tick_lower`, `tick_upper`: The concentrated tick range
+- `liquidity_amount`: Amount of liquidity deployed
+- `path`: `[jit_pool, arb_pool]`
+
+**Current limitations:**
+- Expected profit and gas cost are not estimated (set to 0 in v1)
+- Only V3 concentrated liquidity pools monitored
+- Only detects 2-pool arb patterns (no multi-hop arb + JIT)
+
 ### Performance
 
 MultiHopArb enumerates all pool paths up to depth 4. For Polygon (~100 pools), this evaluates ~1,600 paths per block, each running 80 iterations of ternary search. Expected overhead: 50–200ms per block.
@@ -672,4 +697,4 @@ If the config file doesn't exist, the engine uses built-in defaults. This is not
 
 ### Strategies not detected
 
-`two_hop_arb`, `multi_hop_arb`, and `jit` are implemented. Other strategies (`jit_arb`, `sandwich`) are parsed and accepted but produce no opportunities. Selecting `"all"` is safe and runs both `two_hop_arb` and `multi_hop_arb` detection.
+`two_hop_arb`, `multi_hop_arb`, `jit`, and `jit_arb` are implemented. Only `sandwich` is parsed but not yet implemented. Selecting `"all"` is safe and runs `two_hop_arb`, `multi_hop_arb`, `jit`, and `jit_arb` detection.
