@@ -2,8 +2,10 @@ use std::cell::RefCell;
 
 use crate::cache::CacheStore;
 use crate::mev::opportunity::MevOpportunity;
+use crate::mev::jit::JitDetector;
 use crate::mev::multi_hop::MultiHopArbDetector;
 use crate::mev::two_hop::TwoHopArbDetector;
+use alloy::primitives::Address;
 use crate::pool::registry::PoolRegistry;
 use crate::pool::state::{PoolInfo, PoolManager, PoolState, UniswapV2PoolState};
 use crate::replay::BlockReplayer;
@@ -108,9 +110,15 @@ impl BacktestRunner {
         let pool_manager = std::mem::take(&mut self.pool_manager);
         let pool_manager = RefCell::new(pool_manager);
 
+        // Shared cell bridging TxData.from from filter closure to on_tx closure
+        let current_tx_from: RefCell<Option<Address>> =
+            RefCell::new(None);
+        let mut jit_detector = JitDetector::new(block_num);
+
         self.replayer.replay_each_filtered(
             block_num,
             |tx, receipt_logs| {
+                *current_tx_from.borrow_mut() = Some(tx.from);
                 tx.to.is_some_and(|to| {
                     pool_addrs.contains(&to) || token_addrs.contains(&to)
                 })
@@ -157,6 +165,20 @@ impl BacktestRunner {
                     );
                 }
                 all_opportunities.extend(multi_opps);
+
+                // JIT detector
+                let sender = *current_tx_from.borrow();
+                jit_detector.process_tx(i, &tx.logs, sender);
+                let jit_opps = jit_detector.detect(timestamp);
+                if !jit_opps.is_empty() {
+                    tracing::info!(
+                        "Block {} tx {}: {} JIT opportunities",
+                        block_num,
+                        i,
+                        jit_opps.len()
+                    );
+                }
+                all_opportunities.extend(jit_opps);
 
                 Ok(())
             },
