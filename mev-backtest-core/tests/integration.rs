@@ -1,9 +1,10 @@
-use alloy::primitives::{address, Address, U256};
+use alloy::primitives::{address, b256, Address, B256, U256};
 use mev_backtest_core::mev::two_hop::TwoHopArbDetector;
 use mev_backtest_core::pool::dex_type::DexType;
 use mev_backtest_core::pool::state::UniswapV2PoolState;
 use mev_backtest_core::pool::state::{PoolInfo, PoolManager, PoolState};
 use mev_backtest_core::mev::jit::JitDetector;
+use mev_backtest_core::mev::sandwich::SandwichDetector;
 use mev_backtest_core::types::{GasConfig, Strategy};
 
 /// ── Helpers ──────────────────────────────────────────────────────────────────
@@ -372,6 +373,79 @@ fn test_multi_hop_path_field_populated() {
         assert_eq!(path[0], opp.pool_a);
         assert_eq!(path[path.len() - 1], opp.pool_b);
     }
+}
+
+/// ── Sandwich Detection Tests ─────────────────────────────────────────────────
+#[test]
+fn test_sandwich_detection_synthetic() {
+    use mev_backtest_core::data::ExecutedLog;
+
+    let pool = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    let alice = address!("1111111111111111111111111111111111111111");
+    let bob = address!("2222222222222222222222222222222222222222");
+
+    let v2_swap_topic: B256 =
+        b256!("d78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822");
+
+    let v2_swap_log = |pool: Address, amt0_in: u128, amt1_in: u128, amt0_out: u128, amt1_out: u128| -> ExecutedLog {
+        let mut data = Vec::with_capacity(128);
+        let mut buf = vec![0u8; 16];
+        data.extend_from_slice(&buf);
+        data.extend_from_slice(&amt0_in.to_be_bytes());
+        buf = vec![0u8; 16];
+        data.extend_from_slice(&buf);
+        data.extend_from_slice(&amt1_in.to_be_bytes());
+        buf = vec![0u8; 16];
+        data.extend_from_slice(&buf);
+        data.extend_from_slice(&amt0_out.to_be_bytes());
+        buf = vec![0u8; 16];
+        data.extend_from_slice(&buf);
+        data.extend_from_slice(&amt1_out.to_be_bytes());
+        ExecutedLog { address: pool, topics: vec![v2_swap_topic, B256::ZERO, B256::ZERO], data: data.into() }
+    };
+
+    let usdc = address!("2791bca1f2de4661ed88a30c99a7a9449aa84174");
+    let wmatic = address!("0d500b1d8e8ef31e21c99d1db9a6444d3adf1270");
+
+    let mut pm = PoolManager::new();
+    pm.add_pool(PoolState::UniswapV2(UniswapV2PoolState {
+        info: PoolInfo {
+            address: pool,
+            token0: usdc,
+            token1: wmatic,
+            fee: 30,
+            name: None,
+            dex_type: DexType::UniswapV2,
+            tick_spacing: None,
+        },
+        reserve0: 1_000_000,
+        reserve1: 1_000_000,
+    }));
+
+    let mut detector = SandwichDetector::new(42);
+    let timestamp = 12345u64;
+
+    // Tx 0: alice frontruns — buys WMATIC (token0→token1)
+    detector.process_tx(0, &[v2_swap_log(pool, 100, 0, 0, 90)], Some(alice));
+    assert!(detector.detect(timestamp, &pm).is_empty());
+
+    // Tx 1: bob (victim) — buys WMATIC at worse price
+    detector.process_tx(1, &[v2_swap_log(pool, 200, 0, 0, 170)], Some(bob));
+    assert!(detector.detect(timestamp, &pm).is_empty());
+
+    // Tx 2: alice backruns — sells WMATIC (token1→token0)
+    detector.process_tx(2, &[v2_swap_log(pool, 0, 85, 105, 0)], Some(alice));
+    let opps = detector.detect(timestamp, &pm);
+    assert!(!opps.is_empty(), "Should detect sandwich");
+    assert_eq!(opps[0].strategy, Strategy::Sandwich);
+    assert_eq!(opps[0].pool_a, pool);
+    assert_eq!(opps[0].victim_tx_index, Some(1));
+    assert_eq!(opps[0].backrun_tx_index, Some(2));
+    assert_eq!(opps[0].token_in, usdc);
+    assert_eq!(opps[0].token_out, wmatic);
+
+    // No duplicate
+    assert!(detector.detect(timestamp, &pm).is_empty());
 }
 
 /// ── Real-Data Tests (async / RPC) ──────────────────────────────────────────
