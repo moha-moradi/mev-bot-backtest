@@ -96,7 +96,7 @@ mev-backtest run [OPTIONS]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--strategies <LIST>` | `all` | Comma-separated strategy list or `all`. Available: `two_hop_arb`, `multi_hop_arb`, `jit`, `jit_arb`, `sandwich`. `two_hop_arb`, `multi_hop_arb`, `jit`, and `jit_arb` are implemented. Only `sandwich` is parsed but not yet implemented. |
+| `--strategies <LIST>` | `all` | Comma-separated strategy list or `all`. Available: `two_hop_arb`, `multi_hop_arb`, `jit`, `jit_arb`, `sandwich`. All five strategies are fully implemented and active by default with `all`. |
 
 **Gas model:**
 
@@ -124,7 +124,7 @@ mev-backtest run --days 7
 mev-backtest run --from-block 30000000 --to-block 30000100 -n bsc -r https://bsc.publicnode.com --output json
 
 # Single-block backtest with custom gas settings
-mev-backtest run --block 45000000 --gas-limit 300000 --priority-fee 2.0 --min-profit-usd 0.01
+mev-backtest run --block 45000000 --gas-limit 300000 --priority-fee 2.0
 ```
 
 #### `fetch` — Pre-cache block data without running strategies
@@ -323,13 +323,10 @@ strategies = "all"
 gas_model = "historical_exact"
 
 # Priority fee premium in gwei
-priority_fee = 1.0
+priority_fee_gwei = 0.0
 
-# Coinbase bribe percentage (0-100)
-coinbase_bribe = 10
-
-# Minimum profit in USD
-min_profit_usd = 0.0
+# Gas limit for arb cost estimation
+gas_limit = 200000
 
 # Output format: table, csv, json
 output = "table"
@@ -339,12 +336,6 @@ export_path = "./results"
 
 # Cache directory (sled database)
 cache_dir = "./cache"
-
-# Fast mode (skip token widening in tx filter)
-fast_mode = false
-
-# Gas limit for arb cost estimation
-gas_limit = 200000
 
 # Per-chain configurations
 [chains.polygon]
@@ -697,4 +688,4 @@ If the config file doesn't exist, the engine uses built-in defaults. This is not
 
 ### Strategies not detected
 
-`two_hop_arb`, `multi_hop_arb`, `jit`, and `jit_arb` are implemented. Only `sandwich` is parsed but not yet implemented. Selecting `"all"` is safe and runs `two_hop_arb`, `multi_hop_arb`, `jit`, and `jit_arb` detection.
+All five strategies are implemented: `two_hop_arb`, `multi_hop_arb`, `jit`, `jit_arb`, and `sandwich`. Selecting `"all"` is safe and runs all five.
