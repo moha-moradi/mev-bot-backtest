@@ -1,3 +1,15 @@
+//! Maps internal `MevOpportunity` representations to the UI-facing `UiOpportunity` format.
+//!
+//! This module is the API boundary between core backtest results and the frontend.
+//! It computes USD-denominated profit estimates, builds per-strategy simulation traces,
+//! and hardcodes chain-specific display metadata (explorer URLs, flash-loan providers).
+//!
+//! Key transformations:
+//! - Wei → ETH conversion with fixed precision constants
+//! - Strategy string normalization (`TwoHopArb`/`MultiHopArb` → `"arb"`, etc.)
+//! - Address truncation for UI display (`0x1234...5678`)
+//! - Profit/loss classification (`profitable` / `below_threshold` / `reverted`)
+
 use alloy::primitives::Address;
 use mev_backtest_core::mev::opportunity::MevOpportunity;
 use mev_backtest_core::types::Strategy;
@@ -9,10 +21,18 @@ const BUILDER_TIP_PCT: f64 = 0.10;
 const FLASH_LOAN_FEE_PCT: f64 = 0.0009;
 const MIN_PROFIT_THRESHOLD: f64 = 0.001;
 
+/// Convert wei to ETH using floating-point division.
+///
+/// Used for all UI-facing profit/gas displays. Precision loss is acceptable
+/// because results are shown with ≤5 decimal places.
 fn wei_to_eth(wei: u128) -> f64 {
     wei as f64 / WEI_PER_ETH
 }
 
+/// Normalize a core `Strategy` enum to the short string used in the UI.
+///
+/// Two-hop and multi-hop arbitrage are grouped under `"arb"` to simplify
+/// frontend filtering. All other strategies map 1:1.
 fn ui_strategy(strategy: Strategy) -> &'static str {
     match strategy {
         Strategy::TwoHopArb | Strategy::MultiHopArb => "arb",
@@ -22,11 +42,19 @@ fn ui_strategy(strategy: Strategy) -> &'static str {
     }
 }
 
+/// Truncate an address to `0xaaaa...bbbb` for display in the UI.
+///
+/// Shows the first 4 and last 4 hex characters. Used for pool addresses,
+/// token addresses, and transaction hashes.
 fn short_hash(addr: &Address) -> String {
     let s = hex::encode(addr.as_slice());
     format!("0x{}...{}", &s[..4], &s[s.len() - 4..])
 }
 
+/// Build the simulation trace steps for a plain arbitrage opportunity.
+///
+/// Includes token pair, DEX path, optional flash-loan details, and
+/// gross/net profit breakdown.
 fn build_arb_trace(
     opp: &MevOpportunity,
     gross: f64,
@@ -82,6 +110,10 @@ fn build_arb_trace(
     }
 }
 
+/// Build the simulation trace steps for a JIT liquidity opportunity.
+///
+/// Shows the target pool, LP amount deployed, and fee revenue.
+/// Gas cost is set to 0 because JIT gas is incurred by the LP, not the detector.
 fn build_jit_trace(opp: &MevOpportunity, gross: f64, gas: f64, net: f64) -> SimulationTrace {
     SimulationTrace {
         title: "JIT Liquidity trace".to_string(),
@@ -98,6 +130,9 @@ fn build_jit_trace(opp: &MevOpportunity, gross: f64, gas: f64, net: f64) -> Simu
     }
 }
 
+/// Build the simulation trace steps for a sandwich attack opportunity.
+///
+/// Shows the victim transaction index and front-run/back-run sequence.
 fn build_sandwich_trace(opp: &MevOpportunity, gross: f64, gas: f64, net: f64) -> SimulationTrace {
     SimulationTrace {
         title: "Sandwich trace".to_string(),
@@ -114,6 +149,9 @@ fn build_sandwich_trace(opp: &MevOpportunity, gross: f64, gas: f64, net: f64) ->
     }
 }
 
+/// Build the simulation trace steps for a JIT+Arb combined opportunity.
+///
+/// Combines JIT liquidity deployment with an arbitrage exit on a second pool.
 fn build_jitarb_trace(opp: &MevOpportunity, gross: f64, gas: f64, net: f64) -> SimulationTrace {
     SimulationTrace {
         title: "JIT+Arb trace".to_string(),
@@ -131,6 +169,16 @@ fn build_jitarb_trace(opp: &MevOpportunity, gross: f64, gas: f64, net: f64) -> S
     }
 }
 
+/// Transform a single `MevOpportunity` into the UI-facing `UiOpportunity`.
+///
+/// Computes USD-equivalent profit, classifies the result, and builds a
+/// human-readable simulation trace. The `block_hash` parameter is used to
+/// construct an Etherscan explorer URL — currently hardcoded to `etherscan.io`
+/// for all chains (see `mapping.rs:155`).
+///
+/// Invariants:
+/// - `net = gross - gas - flash_fee - builder_tip`
+/// - `result` is `"profitable"` only when `net > MIN_PROFIT_THRESHOLD` (0.001 ETH)
 pub fn map_opportunity(
     opp: &MevOpportunity,
     _pool_registry: &mev_backtest_core::pool::registry::PoolRegistry,
@@ -193,6 +241,10 @@ pub fn map_opportunity(
     }
 }
 
+/// Batch-map a slice of `MevOpportunity` values to `UiOpportunity` values.
+///
+/// Uses the global `PoolRegistry` for token/pool metadata. Flash-loan eligibility
+/// is inferred from the strategy (`JitArb` and `MultiHopArb` always use flash loans).
 pub fn map_opportunities(
     opportunities: &[MevOpportunity],
 ) -> Vec<UiOpportunity> {
