@@ -314,6 +314,73 @@ impl RpcClient {
         .await
     }
 
+    /// Get the chain ID from the RPC endpoint.
+    /// This calls `eth_chainId` directly rather than using the cached `self.chain_id`.
+    pub async fn get_chain_id(&self) -> anyhow::Result<u64> {
+        self.retry_call(|| {
+            let provider = self.provider.clone();
+            async move {
+                provider
+                    .get_chain_id()
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))
+            }
+        })
+        .await
+    }
+
+    /// Pre-flight connection check.
+    /// Verifies the RPC endpoint is reachable, on the correct network,
+    /// and supports the methods needed for backtesting.
+    ///
+    /// Checks performed:
+    /// 1. `eth_chainId` — confirms the RPC is on the expected network
+    /// 2. `eth_blockNumber` — basic block data access
+    /// 3. `eth_getProof` — required by the EVM block replayer (CachedRpcDb)
+    ///
+    /// Returns a descriptive error if any check fails.
+    pub async fn check_connection(&self, expected_chain_id: u64) -> anyhow::Result<()> {
+        let actual_chain_id = self.get_chain_id().await.map_err(|e| {
+            anyhow::anyhow!(
+                "RPC connection check failed (eth_chainId): {e}.\n\
+                 Verify the RPC URL is correct and the endpoint is reachable."
+            )
+        })?;
+
+        if actual_chain_id != expected_chain_id {
+            return Err(anyhow::anyhow!(
+                "Chain ID mismatch: RPC reports chain {actual_chain_id}, \
+                 expected chain {expected_chain_id}.\n\
+                 Make sure the RPC endpoint is for the correct network."
+            ));
+        }
+
+        let tip = self.get_block_number().await.map_err(|e| {
+            anyhow::anyhow!(
+                "RPC connection check failed (eth_blockNumber): {e}.\n\
+                 The endpoint is reachable but block queries are failing."
+            )
+        })?;
+
+        // eth_getProof is required by CachedRpcDb (EVM block replayer).
+        // Probe with empty slots at the tip — lightweight call.
+        self.get_proof(Address::ZERO, &[], tip).await.map_err(|e| {
+            anyhow::anyhow!(
+                "RPC check failed — missing required method: eth_getProof.\n\
+                 Error: {e}\n\
+                 The EVM block replayer needs eth_getProof support.\n\
+                 Use an archive or trace-compatible RPC endpoint."
+            )
+        })?;
+
+        tracing::info!(
+            "RPC connection OK: chain_id={actual_chain_id} (expected {expected_chain_id}), \
+             tip={tip}, eth_getProof=supported"
+        );
+
+        Ok(())
+    }
+
     /// Execute an `eth_call` at a historical block.
     pub async fn call(&self, to: Address, data: Bytes, block: u64) -> anyhow::Result<Bytes> {
         self.retry_call(|| {
@@ -403,5 +470,37 @@ mod tests {
     fn test_rpc_client_chain_id() {
         let client = RpcClient::new("http://localhost:9999", 137).unwrap();
         assert_eq!(client.chain_id(), 137);
+    }
+
+    #[tokio::test]
+    async fn test_check_connection_refused() {
+        let client = RpcClient::new("http://127.0.0.1:1", 1).unwrap();
+        let result = client.check_connection(1).await;
+        assert!(result.is_err(), "check_connection should fail on a non-existent RPC");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("eth_chainId"),
+            "Error should mention eth_chainId: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_check_connection_chain_id_mismatch() {
+        let client = RpcClient::new("http://127.0.0.1:1", 137).unwrap();
+        let result = client.check_connection(1).await;
+        assert!(result.is_err(), "check_connection should fail on a non-existent RPC");
+        let err = result.unwrap_err().to_string();
+        // The connection fails first, but the error message should be clear
+        assert!(
+            err.contains("eth_chainId"),
+            "Error should mention eth_chainId: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_chain_id_refused() {
+        let client = RpcClient::new("http://127.0.0.1:1", 1).unwrap();
+        let result = client.get_chain_id().await;
+        assert!(result.is_err(), "get_chain_id should fail on a non-existent RPC");
     }
 }

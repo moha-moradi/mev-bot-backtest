@@ -1,0 +1,25 @@
+[2m2026-06-09T08:28:33.466524Z[0m [32m INFO[0m [2mmev_backtest_api[0m[2m:[0m MEVSCOPE API listening on 0.0.0.0:3001
+[2m2026-06-09T08:29:42.258815Z[0m [33m WARN[0m [2mmev_backtest_core::rpc[0m[2m:[0m RPC call failed (attempt 1/6): HTTP error 403 with empty body
+
+Caused by:
+    HTTP error 403 with empty body
+[2m2026-06-09T08:29:42.618276Z[0m [33m WARN[0m [2mmev_backtest_core::rpc[0m[2m:[0m RPC call failed (attempt 2/6): HTTP error 403 with empty body
+
+Caused by:
+    HTTP error 403 with empty body
+[2m2026-06-09T08:29:43.204018Z[0m [33m WARN[0m [2mmev_backtest_core::rpc[0m[2m:[0m RPC call failed (attempt 3/6): HTTP error 403 with empty body
+
+Caused by:
+    HTTP error 403 with empty body
+[2m2026-06-09T08:29:44.169601Z[0m [33m WARN[0m [2mmev_backtest_core::rpc[0m[2m:[0m RPC call failed (attempt 4/6): HTTP error 403 with empty body
+
+Caused by:
+    HTTP error 403 with empty body
+[2m2026-06-09T08:29:45.930151Z[0m [33m WARN[0m [2mmev_backtest_core::rpc[0m[2m:[0m RPC call failed (attempt 5/6): HTTP error 403 with empty body
+
+Caused by:
+    HTTP error 403 with empty body
+[2m2026-06-09T08:29:49.255593Z[0m [33m WARN[0m [2mmev_backtest_core::rpc[0m[2m:[0m RPC call failed (attempt 6/6): HTTP error 403 with empty body
+
+Caused by:
+    HTTP error 403 with empty body

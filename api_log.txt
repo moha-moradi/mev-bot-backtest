@@ -1,0 +1,1 @@
+[2m2026-06-09T08:26:08.950894Z[0m [32m INFO[0m [2mmev_backtest_api[0m[2m:[0m MEVSCOPE API listening on 0.0.0.0:3001

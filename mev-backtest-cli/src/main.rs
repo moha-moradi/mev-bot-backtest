@@ -230,6 +230,7 @@ async fn main() -> anyhow::Result<()> {
 
             let rpc_url = config.effective_rpc_url(validation_result.chain_name);
             let rpc = RpcClient::new(&rpc_url, validation_result.chain_config.chain_id)?;
+            rpc.check_connection(validation_result.chain_config.chain_id).await?;
             let cache = CacheStore::open(&config.cache_dir, validation_result.chain_config.chain_id)?;
 
             // Resolve block range
@@ -375,6 +376,7 @@ async fn main() -> anyhow::Result<()> {
             // Build RPC client
             let rpc_url = config.effective_rpc_url(validation_result.chain_name);
             let rpc = RpcClient::new(&rpc_url, validation_result.chain_config.chain_id)?;
+            rpc.check_connection(validation_result.chain_config.chain_id).await?;
 
             // Open cache
             let cache = CacheStore::open(&config.cache_dir, validation_result.chain_config.chain_id)?;
@@ -546,6 +548,7 @@ async fn main() -> anyhow::Result<()> {
 
             let rpc_url = config.effective_rpc_url(chain_name);
             let rpc = RpcClient::new(&rpc_url, chain_config.chain_id)?;
+            rpc.check_connection(chain_config.chain_id).await?;
             let cache = CacheStore::open(&config.cache_dir, chain_config.chain_id)?;
 
             let block_num = args.block;
@@ -644,6 +647,7 @@ async fn main() -> anyhow::Result<()> {
             let chain_config = config.chains.get(&args.chain_args.chain);
             let chain_id = chain_config.map(|c| c.chain_id).unwrap_or(1);
             let rpc = RpcClient::new(&rpc_url, chain_id)?;
+            rpc.check_connection(chain_id).await?;
 
             let mut v2_addrs = Vec::new();
             if let Some(v2_str) = &args.v2_factories {

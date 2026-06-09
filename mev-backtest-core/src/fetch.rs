@@ -48,10 +48,10 @@ impl Fetcher {
         &self.cache
     }
 
-    pub async fn fetch_range(
+    pub async fn fetch_range<F: Fn() + Sync>(
         &self,
         range: &ResolvedRange,
-        progress: Option<&dyn Fn()>,
+        progress: Option<&F>,
     ) -> anyhow::Result<FetchSummary> {
         let start = Instant::now();
         let cap = self.parallelism.min(20);
