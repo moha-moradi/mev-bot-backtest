@@ -1,3 +1,16 @@
+//! Persistent block/state cache backed by sled.
+//!
+//! `CacheStore` is the local-first persistence layer for the backtest engine.
+//! All fetched block data (headers, transactions, receipts, account state,
+//! storage slots, contract code) is stored here to avoid redundant RPC calls.
+//!
+//! Key design points:
+//! - All keys are namespaced by `chain_id` so one sled directory can serve
+//!   multiple chains without collisions.
+//! - Serialization uses `bincode` for compact binary encoding.
+//! - Separate key prefixes distinguish block data, EVM state, run manifests,
+//!   and on-chain discovery results.
+
 use std::path::Path;
 
 use alloy::primitives::{Address, Bytes, U256};
@@ -6,6 +19,10 @@ use serde::{Deserialize, Serialize};
 use crate::data::{AccountData, BlockData, ReceiptData, TxData};
 use crate::pool::state::PoolInfo;
 
+/// Metadata for a completed simulation run, stored alongside cached block data.
+///
+/// Run manifests are written at the start of every `run` or `fetch` execution
+/// and can be listed to reconstruct run history from the cache directory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunManifest {
     pub run_id: String,
@@ -18,6 +35,13 @@ pub struct RunManifest {
     pub flash_loan_provider: String,
 }
 
+/// Sled-backed persistent cache for block data, EVM state, and run metadata.
+///
+/// All keys are prefixed with `{prefix}:{chain_id}` to namespace data per chain.
+/// Block data (headers, txs, receipts) is the primary cache target; account
+/// state and storage are lazily populated during EVM replay via `CachedRpcDb`.
+///
+/// Serialization format: `bincode` (compact binary, not human-readable).
 #[derive(Clone)]
 pub struct CacheStore {
     db: sled::Db,
@@ -25,11 +49,19 @@ pub struct CacheStore {
 }
 
 impl CacheStore {
+    /// Open (or create) a sled database at the given path.
+    ///
+    /// `chain_id` is stored for key namespacing — it is not the chain ID of
+    /// the sled database itself (one directory can hold multiple chains).
     pub fn open(path: impl AsRef<Path>, chain_id: u64) -> anyhow::Result<Self> {
         let db = sled::open(path)?;
         Ok(CacheStore { db, chain_id })
     }
 
+    /// Construct a sled key from a prefix and variable parts.
+    ///
+    /// Format: `{prefix}:{chain_id}:{part1}:{part2}:...`
+    /// All keys are automatically namespaced by `self.chain_id`.
     fn key(&self, prefix: &str, parts: &[&dyn std::fmt::Display]) -> String {
         let mut k = format!("{}:{}", prefix, self.chain_id);
         for p in parts {
@@ -39,21 +71,25 @@ impl CacheStore {
         k
     }
 
+    /// Serialize a value to `bincode` bytes for sled storage.
     fn encode<T: Serialize + ?Sized>(val: &T) -> anyhow::Result<Vec<u8>> {
         Ok(bincode::serialize(val)?)
     }
 
+    /// Deserialize a value from `bincode` bytes retrieved from sled.
     fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> anyhow::Result<T> {
         Ok(bincode::deserialize(bytes)?)
     }
 
     // ---- Block ----
+    /// Store a block header. Key: `block:{chain_id}:{block_num}`.
     pub fn put_block(&self, block_num: u64, block: &BlockData) -> anyhow::Result<()> {
         let key = self.key("block", &[&block_num]);
         self.db.insert(key, Self::encode(block)?)?;
         Ok(())
     }
 
+    /// Retrieve a cached block header. Key: `block:{chain_id}:{block_num}`.
     pub fn get_block(&self, block_num: u64) -> anyhow::Result<Option<BlockData>> {
         let key = self.key("block", &[&block_num]);
         match self.db.get(&key)? {
@@ -63,12 +99,14 @@ impl CacheStore {
     }
 
     // ---- Txs ----
+    /// Store transactions for a block. Key: `txs:{chain_id}:{block_num}`.
     pub fn put_txs(&self, block_num: u64, txs: &[TxData]) -> anyhow::Result<()> {
         let key = self.key("txs", &[&block_num]);
         self.db.insert(key, Self::encode(txs)?)?;
         Ok(())
     }
 
+    /// Retrieve cached transactions for a block. Key: `txs:{chain_id}:{block_num}`.
     pub fn get_txs(&self, block_num: u64) -> anyhow::Result<Option<Vec<TxData>>> {
         let key = self.key("txs", &[&block_num]);
         match self.db.get(&key)? {
@@ -78,12 +116,14 @@ impl CacheStore {
     }
 
     // ---- Receipts ----
+    /// Store transaction receipts for a block. Key: `receipts:{chain_id}:{block_num}`.
     pub fn put_receipts(&self, block_num: u64, receipts: &[ReceiptData]) -> anyhow::Result<()> {
         let key = self.key("receipts", &[&block_num]);
         self.db.insert(key, Self::encode(receipts)?)?;
         Ok(())
     }
 
+    /// Retrieve cached receipts for a block. Key: `receipts:{chain_id}:{block_num}`.
     pub fn get_receipts(&self, block_num: u64) -> anyhow::Result<Option<Vec<ReceiptData>>> {
         let key = self.key("receipts", &[&block_num]);
         match self.db.get(&key)? {
@@ -93,12 +133,16 @@ impl CacheStore {
     }
 
     // ---- Check integrity ----
+    /// Check whether a block has complete cached data (header + txs + receipts).
     pub fn has_block(&self, block_num: u64) -> anyhow::Result<bool> {
         Ok(self.get_block(block_num)?.is_some()
             && self.get_txs(block_num)?.is_some()
             && self.get_receipts(block_num)?.is_some())
     }
 
+    /// Scan a block range and return block numbers with missing cached data.
+    ///
+    /// Used by `Fetcher` after a fetch pass to identify gaps that need refetching.
     pub fn check_integrity(&self, start: u64, end: u64) -> anyhow::Result<Vec<u64>> {
         let mut missing = Vec::new();
         for n in start..=end {
@@ -110,6 +154,8 @@ impl CacheStore {
     }
 
     // ---- Account / Slot / Code (lazy fetch target for revm) ----
+    /// Store account state (nonce, balance, code_hash) for lazy EVM replay.
+    /// Key: `account:{chain_id}:{block_num}:{address}`.
     pub fn put_account(
         &self,
         block_num: u64,
@@ -121,6 +167,7 @@ impl CacheStore {
         Ok(())
     }
 
+    /// Retrieve cached account state. Key: `account:{chain_id}:{block_num}:{address}`.
     pub fn get_account(
         &self,
         block_num: u64,
@@ -133,6 +180,7 @@ impl CacheStore {
         }
     }
 
+    /// Store a single storage slot value. Key: `slot:{chain_id}:{block_num}:{address}:{slot}`.
     pub fn put_slot(
         &self,
         block_num: u64,
@@ -145,6 +193,7 @@ impl CacheStore {
         Ok(())
     }
 
+    /// Retrieve a cached storage slot. Key: `slot:{chain_id}:{block_num}:{address}:{slot}`.
     pub fn get_slot(
         &self,
         block_num: u64,
@@ -158,12 +207,17 @@ impl CacheStore {
         }
     }
 
+    /// Store contract bytecode (keyed by address only, not block).
+    /// Key: `code:{chain_id}:{address}`.
+    ///
+    /// Bytecode is assumed stable across blocks for the address namespace.
     pub fn put_code(&self, address: Address, code: &Bytes) -> anyhow::Result<()> {
         let key = self.key("code", &[&address]);
         self.db.insert(key, Self::encode(code)?)?;
         Ok(())
     }
 
+    /// Retrieve cached contract bytecode. Key: `code:{chain_id}:{address}`.
     pub fn get_code(&self, address: Address) -> anyhow::Result<Option<Bytes>> {
         let key = self.key("code", &[&address]);
         match self.db.get(&key)? {
@@ -173,12 +227,17 @@ impl CacheStore {
     }
 
     // ---- RunManifest ----
+    /// Store a run manifest. Key: `manifest:{run_id}`.
+    ///
+    /// Run manifests are written at the start of every `run` or `fetch` command
+    /// to enable run history reconstruction from the cache directory.
     pub fn put_manifest(&self, manifest: &RunManifest) -> anyhow::Result<()> {
         let key = format!("manifest:{}", manifest.run_id);
         self.db.insert(key, Self::encode(manifest)?)?;
         Ok(())
     }
 
+    /// Retrieve a run manifest by run ID. Key: `manifest:{run_id}`.
     pub fn get_manifest(&self, run_id: &str) -> anyhow::Result<Option<RunManifest>> {
         let key = format!("manifest:{}", run_id);
         match self.db.get(&key)? {
@@ -187,7 +246,10 @@ impl CacheStore {
         }
     }
 
-    /// List all stored run manifests with their run IDs.
+    /// List all stored run manifests, sorted newest first by `resolved_at`.
+    ///
+    /// Scans the `manifest:` key prefix and decodes each entry.
+    /// Used to reconstruct run history from the cache directory.
     pub fn list_manifests(&self) -> anyhow::Result<Vec<(String, RunManifest)>> {
         let prefix = "manifest:";
         let mut results = Vec::new();
@@ -205,12 +267,17 @@ impl CacheStore {
     }
 
     // ---- Pool Discovery ----
+    /// Store a discovered pool. Key: `discovery:{chain_id}:pool:{address}`.
+    ///
+    /// Discovered pools are written by the `discover` command and loaded
+    /// on subsequent runs to augment the JSON registry.
     pub fn put_discovered_pool(&self, pool: &PoolInfo) -> anyhow::Result<()> {
         let key = format!("discovery:{}:pool:{}", self.chain_id, pool.address);
         self.db.insert(key, Self::encode(pool)?)?;
         Ok(())
     }
 
+    /// Retrieve a discovered pool by address. Key: `discovery:{chain_id}:pool:{address}`.
     pub fn get_discovered_pool(&self, address: &Address) -> anyhow::Result<Option<PoolInfo>> {
         let key = format!("discovery:{}:pool:{}", self.chain_id, address);
         match self.db.get(&key)? {
@@ -219,6 +286,9 @@ impl CacheStore {
         }
     }
 
+    /// List all discovered pools for this chain.
+    ///
+    /// Scans the `discovery:{chain_id}:pool:` key prefix.
     pub fn list_discovered_pools(&self) -> anyhow::Result<Vec<PoolInfo>> {
         let prefix = format!("discovery:{}:pool:", self.chain_id);
         let mut pools = Vec::new();
@@ -231,12 +301,18 @@ impl CacheStore {
         Ok(pools)
     }
 
+    /// Store a discovery cursor (last scanned block) for a factory address.
+    /// Key: `discovery:{chain_id}:cursor:{factory}`.
+    ///
+    /// Cursors enable incremental pool discovery across restarts.
     pub fn put_discovery_cursor(&self, factory: &Address, block: u64) -> anyhow::Result<()> {
         let key = format!("discovery:{}:cursor:{}", self.chain_id, factory);
         self.db.insert(key, Self::encode(&block)?)?;
         Ok(())
     }
 
+    /// Retrieve a discovery cursor for a factory address.
+    /// Key: `discovery:{chain_id}:cursor:{factory}`.
     pub fn get_discovery_cursor(&self, factory: &Address) -> anyhow::Result<Option<u64>> {
         let key = format!("discovery:{}:cursor:{}", self.chain_id, factory);
         match self.db.get(&key)? {

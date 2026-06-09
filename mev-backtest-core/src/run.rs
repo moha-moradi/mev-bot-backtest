@@ -15,7 +15,17 @@ use crate::resolver::ResolvedRange;
 use crate::rpc::RpcClient;
 use crate::types::GasConfig;
 
-/// Orchestrates backtesting: replays blocks and detects MEV opportunities.
+/// Orchestrates MEV backtest execution by replaying blocks through revm and
+/// running detection strategies against updated pool state.
+///
+/// This is the central sync workhorse of the engine. For each block in the
+/// resolved range, it loads cached block data, replays transactions through
+/// a filtered EVM pipeline, and invokes all active MEV detectors against
+/// the updated `PoolManager` state.
+///
+/// The runner is intentionally stateless between blocks — pool state is
+/// carried forward via `PoolManager` which accumulates reserve updates from
+/// Swap/Sync events emitted during replay.
 pub struct BacktestRunner {
     replayer: BlockReplayer,
     pool_manager: PoolManager,
@@ -23,6 +33,11 @@ pub struct BacktestRunner {
 }
 
 impl BacktestRunner {
+    /// Create a new backtest runner with the given replayer, pool manager, and
+    /// gas configuration.
+    ///
+    /// This is typically called after pool initialization is complete and the
+    /// block replayer has been constructed with the cache and RPC client.
     pub fn new(
         replayer: BlockReplayer,
         pool_manager: PoolManager,
@@ -35,7 +50,23 @@ impl BacktestRunner {
         }
     }
 
-    /// Initialize pool manager by loading registry + discovered pools and fetching on-chain reserves.
+    /// Initialize the pool manager by loading pool definitions and fetching
+    /// on-chain reserve state at a reference block.
+    ///
+    /// Loading order:
+    /// 1. Static pool registry JSON (e.g., `pools/polygon.json`) — these pools
+    ///    take precedence over discovered pools.
+    /// 2. Previously discovered pools from the sled cache (on-chain discovery
+    ///    from prior runs).
+    /// 3. Merge: registry pools win on address collision.
+    ///
+    /// After loading definitions, `init_from_rpc()` is called to fetch the
+    /// current reserves for each pool via `eth_call getReserves()` (V2) or
+    /// `slot0()/liquidity()` (V3). This runs with up to 20 concurrent RPC
+    /// calls.
+    ///
+    /// Pools that fail to initialize (e.g., the contract no longer exists at
+    /// that block) are logged as warnings but do not halt execution.
     pub async fn init_pools(
         pool_manager: &mut PoolManager,
         registry_path: Option<&str>,
@@ -89,8 +120,34 @@ impl BacktestRunner {
         );
     }
 
-    /// Replay a single block, skipping EVM execution for txs that don't interact with tracked pools.
-    /// Replays txs that touch pool addresses or tracked token addresses.
+    /// Replay a single block and run all active MEV detection strategies.
+    ///
+    /// # Filtered replay
+    /// Transactions are filtered before EVM execution: only transactions whose
+    /// `to` address or log emitter matches a tracked pool or token address
+    /// are fully replayed through revm. All others take the **fast path** —
+    /// their `ExecutedTx` is synthesized directly from cached receipt data
+    /// with no EVM execution. This is the primary performance optimization
+    /// for large backtests.
+    ///
+    /// # Pool state management
+    /// After each transaction, Swap/Sync events are decoded and applied to
+    /// `PoolManager` via `update_from_logs()`. All detectors operate on the
+    /// updated pool state, so opportunities are detected against the
+    /// post-transaction reserves (not the pre-transaction state).
+    ///
+    /// # Borrow checker workaround
+    /// This method takes ownership of `pool_manager` via `mem::take` +
+    /// `RefCell` because the replayer's `on_tx` callback requires `&mut self`
+    /// on the runner but we need to mutate pool state inside the closure.
+    /// `pool_manager` is restored to `self.pool_manager` after the block.
+    ///
+    /// # Detection order per transaction
+    /// 1. Two-hop arbitrage (all pool pairs, both directions)
+    /// 2. Multi-hop arbitrage (BFS paths up to depth 4)
+    /// 3. JIT liquidity (Mint→Swap→Burn pattern)
+    /// 4. Sandwich attacks (frontrun/victim/backrun triple)
+    /// 5. JIT+Arb hybrid (Mint + cross-pool swap by same sender)
     pub fn run_block(&mut self, block_num: u64) -> anyhow::Result<Vec<MevOpportunity>> {
         let (block_data, txs) = self.replayer.load_block_data(block_num)?;
         if txs.is_empty() {
@@ -220,7 +277,16 @@ impl BacktestRunner {
         Ok(all_opportunities)
     }
 
-    /// Run backtest over a resolved block range.
+    /// Run backtest over a resolved block range, collecting all detected
+    /// opportunities across every block.
+    ///
+    /// Each block is processed sequentially via `run_block()`. Failed blocks
+    /// are logged as errors but do not halt the scan — the runner continues
+    /// to the next block in the range.
+    ///
+    /// The returned vector contains opportunities from all successful blocks,
+    /// sorted by block number and transaction index (as produced by
+    /// `run_block()`).
     pub fn run_range(
         &mut self,
         resolved: &ResolvedRange,
@@ -245,6 +311,15 @@ impl BacktestRunner {
     }
 }
 
+/// Add a pool to the manager, registering it in the token index for fast
+/// arbitrage pair enumeration.
+///
+/// The token index maps each token address to all pools that trade it,
+/// enabling `arbitrage_pairs()` to find shared-token pairs in O(n²) over
+/// tokens rather than pools.
+///
+/// Adding a pool invalidates the cached arbitrage pairs (regenerated on
+/// next call to `arbitrage_pairs()`).
 fn add_pool_to_manager(pool_manager: &mut PoolManager, info: PoolInfo) {
     match info.dex_type {
         crate::pool::dex_type::DexType::UniswapV2 => {

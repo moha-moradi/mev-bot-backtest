@@ -1,3 +1,17 @@
+//! Async simulation pipeline — the central execution engine for the API server.
+//!
+//! This module bridges the HTTP API to the core backtest engine. It runs the
+//! full 6-stage pipeline (RPC fetch → tx filter → EVM replay → opportunity
+//! scan → profitability check → aggregation) as a background tokio task,
+//! streaming progress and results to connected clients via SSE.
+//!
+//! Key design decisions:
+//! - Stages 0-2 run async (RPC, fetching, pool init)
+//! - Stage 3 (opportunity scan) runs sync inside `block_in_place` because
+//!   `BacktestRunner::run_range()` is synchronous and CPU-bound
+//! - SSE events are emitted via `broadcast::channel` so multiple clients
+//!   can subscribe to the same run's status
+
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -31,6 +45,24 @@ pub struct PipelineParams {
     pub cache_dir: String,
 }
 
+/// Run the full 6-stage MEV backtest pipeline for a single simulation request.
+///
+/// This function is spawned as a background tokio task by the API route
+/// handler. It owns the execution for the lifetime of the run, updating
+/// `run_state` and emitting SSE events via `sse_tx` at each stage boundary.
+///
+/// # Stages
+/// 0. RPC fetch — connect, verify chain, resolve block range
+/// 1. TX filter — fetch blocks, cache with integrity check
+/// 2. REVM replay — init pools, build replayer
+/// 3. Opportunity scan — per-block replay + detection (runs sync)
+/// 4. Profitability — filter `expected_profit > 0`
+/// 5. Aggregation — compute metrics, save results to disk
+///
+/// On success, emits a `complete` SSE event with the run duration.
+/// On failure at any stage, emits an `error` SSE event and sets the run
+/// status to `Error`. The run state and results remain accessible via the
+/// API for debugging.
 pub async fn run_pipeline(
     params: PipelineParams,
     chain_config: ChainConfig,
@@ -380,6 +412,11 @@ pub async fn run_pipeline(
     });
 }
 
+/// Send a log entry to both the run state (for API polling) and the SSE
+/// stream (for live status subscribers).
+///
+/// Logs are tagged with a category (e.g., "RPC", "FETCH", "SCAN") for
+/// filtering in the frontend.
 async fn pipeline_log(
     run_state: &Arc<RwLock<RunState>>,
     sse_tx: &broadcast::Sender<SseEvent>,
@@ -400,6 +437,12 @@ async fn pipeline_log(
     });
 }
 
+/// Transition the run to an error state and emit a terminal `error` SSE event.
+///
+/// This is called when any pipeline stage fails irrecoverably (e.g., RPC
+/// connection failure, fetch error). The run status is set to `Error` with
+/// the message, the failed stage is marked `Failed`, and the error is
+/// broadcast to all SSE subscribers.
 async fn pipeline_error(
     run_state: &Arc<RwLock<RunState>>,
     sse_tx: &broadcast::Sender<SseEvent>,

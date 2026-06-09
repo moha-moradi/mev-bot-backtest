@@ -1,3 +1,13 @@
+//! RPC client for EVM chain interaction.
+//!
+//! Provides a thin wrapper around `alloy::providers::RootProvider` with:
+//! - Exponential-backoff retry logic for all network calls
+//! - Connection pre-flight validation (`eth_chainId`, `eth_blockNumber`, `eth_getProof`)
+//! - Type-safe conversion from alloy responses to internal `data` types
+//!
+//! The `RpcClient` is the single external integration point for the backtest engine.
+//! Every blockchain read (blocks, receipts, proofs, storage, code) flows through here.
+
 use std::time::Duration;
 
 use alloy::consensus::Transaction;
@@ -11,6 +21,10 @@ use url::Url;
 
 use crate::data::{AccessListItem, BlockData, LogData, ReceiptData, TxData};
 
+/// Retry configuration for RPC calls.
+///
+/// Uses exponential backoff: `delay = base_delay_ms * 2^attempt`, capped at `max_delay_ms`.
+/// Default: 5 retries, 200ms base, 5s cap.
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
     pub max_retries: u32,
@@ -28,6 +42,14 @@ impl Default for RetryConfig {
     }
 }
 
+/// EVM RPC client with built-in retry and connection validation.
+///
+/// Wraps an `alloy` `RootProvider` and provides:
+/// - Automatic retry with exponential backoff for transient RPC failures
+/// - Pre-flight connection checks that verify archive-node requirements
+/// - Conversion helpers from alloy types to internal `data` types
+///
+/// All methods return `anyhow::Result` for uniform error handling.
 #[derive(Debug, Clone)]
 pub struct RpcClient {
     provider: RootProvider,
@@ -36,6 +58,10 @@ pub struct RpcClient {
 }
 
 impl RpcClient {
+    /// Create a new RPC client from a URL and expected chain ID.
+    ///
+    /// The chain ID is stored locally and used for connection validation
+    /// (verifying the RPC endpoint is on the expected network).
     pub fn new(rpc_url: &str, chain_id: u64) -> anyhow::Result<Self> {
         let url = rpc_url.parse::<Url>()?;
         let provider = RootProvider::new_http(url);
@@ -46,15 +72,21 @@ impl RpcClient {
         })
     }
 
+    /// Override the default retry configuration.
     pub fn with_retry(mut self, retry: RetryConfig) -> Self {
         self.retry = retry;
         self
     }
 
+    /// Returns the chain ID this client is configured for.
     pub fn chain_id(&self) -> u64 {
         self.chain_id
     }
 
+    /// Execute an RPC call with exponential-backoff retry.
+    ///
+    /// Retries up to `max_retries` times with delays doubling each attempt.
+    /// Returns the last error if all retries are exhausted.
     async fn retry_call<F, Fut, T>(&self, f: F) -> anyhow::Result<T>
     where
         F: Fn() -> Fut,
@@ -87,6 +119,7 @@ impl RpcClient {
         ))
     }
 
+    /// Fetch the latest block number from the chain.
     pub async fn get_block_number(&self) -> anyhow::Result<u64> {
         self.retry_call(|| async {
             self.provider
@@ -97,6 +130,10 @@ impl RpcClient {
         .await
     }
 
+    /// Fetch the timestamp of a specific block.
+    ///
+    /// Requests the full block header and extracts the timestamp.
+    /// Used by `RangeResolver` for `--days` block range resolution.
     pub async fn get_block_timestamp(&self, block_number: u64) -> anyhow::Result<u64> {
         self.retry_call(|| {
             let provider = self.provider.clone();
@@ -113,6 +150,9 @@ impl RpcClient {
         .await
     }
 
+    /// Fetch logs matching an `eth_getLogs` filter.
+    ///
+    /// Used for pool discovery (scanning `PairCreated` / `PoolCreated` events).
     pub async fn get_logs(&self, filter: &Filter) -> anyhow::Result<Vec<Log>> {
         self.retry_call(|| {
             let provider = self.provider.clone();
@@ -127,6 +167,10 @@ impl RpcClient {
         .await
     }
 
+    /// Fetch a full block (header + transactions) by block number.
+    ///
+    /// Returns `BlockData` (header fields) and `Vec<TxData>` (transaction list).
+    /// Transactions are converted from alloy types to internal types via `alloy_tx_to_tx_data`.
     pub async fn get_block(&self, block_number: u64) -> anyhow::Result<(BlockData, Vec<TxData>)> {
         let block: Block = self
             .retry_call(|| {
@@ -166,6 +210,10 @@ impl RpcClient {
         Ok((block_data, txs))
     }
 
+    /// Fetch transaction receipts for a block.
+    ///
+    /// Uses `eth_getBlockReceipts` (EIP-658 receipt format).
+    /// Receipts are converted from alloy types to internal types via `alloy_receipt_to_receipt_data`.
     pub async fn get_receipts(&self, block_number: u64) -> anyhow::Result<Vec<ReceiptData>> {
         let receipts = self
             .retry_call(|| {
@@ -188,6 +236,13 @@ impl RpcClient {
             .collect())
     }
 
+    /// Fetch account proof via `eth_getProof`.
+    ///
+    /// Returns `(nonce, balance, code_hash, storage_proof)` for the given address
+    /// at a historical block. This is the primary state-fetching mechanism for
+    /// `CachedRpcDb` during EVM replay.
+    ///
+    /// **Requires an archive node** — unavailable on standard full nodes.
     pub async fn get_proof(
         &self,
         address: Address,
@@ -220,6 +275,7 @@ impl RpcClient {
         .await
     }
 
+    /// Fetch a single storage slot value at a historical block via `eth_getStorageAt`.
     pub async fn get_storage_at(
         &self,
         address: Address,
@@ -239,6 +295,10 @@ impl RpcClient {
         .await
     }
 
+    /// Fetch account state (nonce, balance, bytecode) at a historical block.
+    ///
+    /// Fires three parallel RPC calls: `eth_getTransactionCount`, `eth_getBalance`,
+    /// `eth_getCode`. Returns `(nonce, balance, bytecode)`.
     pub async fn get_account(
         &self,
         address: Address,
@@ -270,6 +330,7 @@ impl RpcClient {
         Ok((nonce, balance, code))
     }
 
+    /// Fetch contract bytecode at a historical block via `eth_getCode`.
     pub async fn get_code(&self, address: Address, block: u64) -> anyhow::Result<Bytes> {
         self.retry_call(|| {
             let provider = self.provider.clone();
@@ -382,6 +443,9 @@ impl RpcClient {
     }
 
     /// Execute an `eth_call` at a historical block.
+    ///
+    /// Used for pool state queries (`getReserves()`, `slot0()`, `liquidity()`)
+    /// without modifying chain state.
     pub async fn call(&self, to: Address, data: Bytes, block: u64) -> anyhow::Result<Bytes> {
         self.retry_call(|| {
             let provider = self.provider.clone();

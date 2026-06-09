@@ -1,3 +1,19 @@
+//! Pool state management for the backtest engine.
+//!
+//! This module maintains runtime state for all tracked liquidity pools and
+//! processes on-chain events (Swap, Sync, Mint, Burn) to keep state current
+//! during block replay.
+//!
+//! Key components:
+//! - `PoolInfo` — static metadata loaded from registry JSON files
+//! - `PoolState` enum — runtime state for V2, V3, Curve, and Balancer pools
+//! - `PoolManager` — central registry that initializes pools from on-chain state
+//!   and updates reserves from transaction logs
+//!
+//! Pool initialization uses a two-phase approach:
+//! 1. Load `PoolInfo` from JSON registry + sled discovery cache
+//! 2. Fetch live reserve/state data via `eth_call` (with `eth_getStorageAt` fallback)
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,7 +30,11 @@ use crate::pool::dex_type::DexType;
 use crate::rpc::RpcClient;
 use crate::utils::u128_from_be_bytes;
 
-/// Static pool information loaded from the registry JSON.
+/// Static pool information loaded from the registry JSON file.
+///
+/// Registry files (e.g. `pools/polygon.json`) contain the canonical list of
+/// pools to track. `PoolInfo` is deserialized directly from these files and
+/// from the sled discovery cache.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PoolInfo {
     pub address: Address,
@@ -35,6 +55,9 @@ impl PoolInfo {
 }
 
 /// Runtime state for a Uniswap V2 constant-product pool.
+///
+/// Tracks the two reserve balances that define the pool's invariant `x * y = k`.
+/// Reserves are updated on every Swap or Sync event during block replay.
 #[derive(Debug, Clone)]
 pub struct UniswapV2PoolState {
     pub info: PoolInfo,
@@ -43,6 +66,10 @@ pub struct UniswapV2PoolState {
 }
 
 /// Runtime state for a Uniswap V3 concentrated-liquidity pool.
+///
+/// Tracks sqrt price, current tick, global liquidity, and per-tick liquidity
+/// deltas. The `ticks` map is updated on Mint/Burn events and consulted
+/// during V3 swap quoting (`v3_quote.rs`).
 #[derive(Debug, Clone)]
 pub struct UniswapV3PoolState {
     pub info: PoolInfo,
@@ -83,6 +110,9 @@ pub struct BalancerPoolState {
 }
 
 /// Runtime state for any tracked pool.
+///
+/// Enum variants correspond to supported DEX types.
+/// Each variant wraps the type-specific state struct defined above.
 #[derive(Debug, Clone)]
 pub enum PoolState {
     UniswapV2(UniswapV2PoolState),
@@ -148,7 +178,15 @@ static V3_LIQUIDITY_SELECTOR: LazyLock<Bytes> = LazyLock::new(|| {
     Bytes::copy_from_slice(&hash[..4])
 });
 
-/// Manages runtime pool state: initializes from RPC, updates from Swap/Sync events.
+/// Manages runtime pool state for all tracked pools during block replay.
+///
+/// Responsibilities:
+/// - Stores and updates `PoolState` for every pool in the registry
+/// - Maintains a `token_index` for fast token→pool lookups (used by arb detectors)
+/// - Caches computed arbitrage pairs (invalidated on `add_pool`)
+/// - Dispatches on-chain event logs to the appropriate state update method
+///
+/// `PoolManager` is the single source of truth for pool state during a run.
 #[derive(Debug, Clone)]
 pub struct PoolManager {
     pools: HashMap<Address, PoolState>,
@@ -159,6 +197,10 @@ pub struct PoolManager {
 }
 
 impl PoolManager {
+    /// Create an empty pool manager with no pools loaded.
+    ///
+    /// Pools must be added via `add_pool()` and initialized via `init_from_rpc()`
+    /// before use in detection.
     pub fn new() -> Self {
         PoolManager {
             pools: HashMap::new(),
@@ -167,6 +209,7 @@ impl PoolManager {
         }
     }
 
+    /// Create a pool manager pre-allocated for the given number of pools.
     pub fn with_capacity(capacity: usize) -> Self {
         PoolManager {
             pools: HashMap::with_capacity(capacity),
@@ -175,6 +218,9 @@ impl PoolManager {
         }
     }
 
+    /// Add a pool and update the token index.
+    ///
+    /// Invalidates the cached arbitrage pairs (recomputed on next `arbitrage_pairs()` call).
     pub fn add_pool(&mut self, state: PoolState) {
         let addr = state.address();
         let info = state.info().clone();
@@ -190,27 +236,35 @@ impl PoolManager {
         *self.pairs_cache.borrow_mut() = None; // invalidate cache
     }
 
+    /// Look up a pool by address.
     pub fn get(&self, address: &Address) -> Option<&PoolState> {
         self.pools.get(address)
     }
 
+    /// Mutable lookup — used to update reserves after events.
     pub fn get_mut(&mut self, address: &Address) -> Option<&mut PoolState> {
         self.pools.get_mut(address)
     }
 
+    /// Iterate over all tracked pools.
     pub fn all_pools(&self) -> impl Iterator<Item = &PoolState> {
         self.pools.values()
     }
 
+    /// Number of pools currently tracked.
     pub fn pool_count(&self) -> usize {
         self.pools.len()
     }
 
+    /// All pool addresses (used for transaction filtering during replay).
     pub fn pool_addresses(&self) -> Vec<Address> {
         self.pools.keys().copied().collect()
     }
 
     /// Returns all unique token addresses tracked by the pool manager.
+    ///
+    /// Used by the transaction filter in `replay.rs` to determine whether
+    /// a transaction touches any tracked token (and thus needs full EVM replay).
     pub fn token_addresses(&self) -> Vec<Address> {
         self.token_index.keys().copied().collect()
     }
@@ -220,7 +274,10 @@ impl PoolManager {
         self.token_index.get(token).map(|v| v.as_slice())
     }
 
-    /// Find a pool that trades both token_a and token_b (typically WMATIC pair discovery).
+    /// Find a pool that trades both `token_a` and `token_b`.
+    ///
+    /// Typically used to find a WMATIC pair for USD pricing fallback.
+    /// Returns the first match found in the token index.
     pub fn find_pair_pool(&self, token_a: &Address, token_b: &Address) -> Option<Address> {
         let pools_a = self.token_index.get(token_a)?;
         let pools_b = self.token_index.get(token_b)?;

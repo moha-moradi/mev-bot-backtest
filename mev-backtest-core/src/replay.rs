@@ -1,3 +1,25 @@
+//! EVM block replay via revm — the execution engine for historical backtests.
+//!
+//! This module replays cached block data through revm to reconstruct EVM state
+//! transaction-by-transaction. It is the performance-critical path of the
+//! backtest engine.
+//!
+//! ## Key components
+//! - [`BlockReplayer`] — high-level replay interface used by `BacktestRunner`
+//! - [`CachedRpcDb`] — lazy-fetch database bridging sled cache and RPC for
+//!   revm's `Database` trait
+//! - [`StateSnapshot`] — forkable state wrapper for snapshot/rollback patterns
+//!
+//! ## Polygon special handling
+//! Chain 137 (Polygon) requires BLS12-377 precompile registration and state
+//! receiver stubs. See [`register_polygon_precompiles`] and
+//! [`spec_id_for_block`] for details.
+//!
+//! ## Receipt verification
+//! After each transaction, `verify_receipt()` compares the revm execution
+//! result against cached receipts (status, gas used, logs). Polygon system
+//! logs from `0x1001` and `0x1010` are filtered during comparison.
+
 use std::collections::HashMap;
 use std::fmt;
 
@@ -71,7 +93,19 @@ pub fn spec_id_for_block(chain_id: u64, block_number: u64) -> SpecId {
 }
 
 /// Lazy-fetch database wrapping sled cache and RPC.
-/// Implements `Database` for use with revm's `CacheDB`.
+///
+/// Implements revm's `Database` trait, providing a three-tier lookup strategy:
+/// 1. In-memory HashMap (within a single block replay)
+/// 2. Sled cache (persistent, keyed by block number + address/slot)
+/// 3. RPC fallback (`eth_getProof`, `eth_getStorageAt`, `eth_getCodeAt`)
+///
+/// All RPC results are cached back to sled for subsequent lookups. This is
+/// the mechanism that makes large backtests feasible — the EVM only fetches
+/// state for addresses that are actually touched during execution.
+///
+/// The database operates at a specific `block_number` (the historical block
+/// being replayed), but can be updated via `set_block_number()` during
+/// cross-block operations.
 pub struct CachedRpcDb {
     handle: tokio::runtime::Handle,
     cache: CacheStore,
@@ -421,7 +455,26 @@ pub fn register_polygon_precompiles(
     Ok(())
 }
 
-/// Block replayer that replays historical blocks using revm.
+/// Block replayer that replays historical blocks through revm for MEV detection.
+///
+/// This is the primary interface between `BacktestRunner` and the EVM. It
+/// loads cached block data (header, transactions, receipts) from sled and
+/// replays them through revm with `CachedRpcDb` for lazy state fetching.
+///
+/// ## Replay modes
+/// - `replay_to()` — replay up to a specific tx index (used by CLI `replay`)
+/// - `replay_block()` — replay entire block
+/// - `replay_each()` — replay with an `on_tx` callback after each tx
+/// - `replay_each_filtered()` — replay with a filter to skip non-pool txs
+///
+/// The filtered mode is the critical performance optimization: most
+/// transactions in a block do not interact with tracked DEX pools, and
+/// skipping EVM execution for them reduces backtest time dramatically.
+///
+/// ## Polygon handling
+/// For chain 137, BLS12-377 precompiles and the state receiver (0x1001)
+/// are registered before each block replay. The EVM spec ID (Berlin,
+/// London, Cancun) is selected per block number.
 pub struct BlockReplayer {
     handle: tokio::runtime::Handle,
     cache: CacheStore,
@@ -601,8 +654,15 @@ impl BlockReplayer {
         ))
     }
 
-    /// Replay all txs in a block up to (and including) `tx_index`.
-    /// Returns the final state snapshot and execution results.
+    /// Replay all transactions in a block up to and including `tx_index`.
+    ///
+    /// Used primarily by the CLI `replay` command for receipt verification
+    /// debugging. Returns the final EVM state snapshot and per-transaction
+    /// execution results.
+    ///
+    /// Receipt verification compares revm execution results (status, gas used,
+    /// logs) against cached receipts. Polygon system logs (0x1001, 0x1010)
+    /// are filtered before comparison.
     pub fn replay_to(
         &self,
         block_num: u64,
@@ -826,9 +886,23 @@ impl BlockReplayer {
         Ok(())
     }
 
-    /// Replay a block, skipping EVM execution for txs that don't pass the filter.
-    /// For skipped txs, `ExecutedTx` is built from cached receipt data (no EVM overhead).
-    /// The filter receives the tx data and the cached receipt logs.
+    /// Replay a block, skipping EVM execution for transactions that don't
+    /// interact with tracked pools or tokens.
+    ///
+    /// This is the **primary performance optimization** of the backtest engine.
+    /// The filter receives `(tx_data, receipt_logs)` and returns `true` if
+    /// the transaction touches a tracked address. Transactions that fail the
+    /// filter take the fast path: `ExecutedTx` is synthesized from cached
+    /// receipt data with no EVM execution and no state changes applied.
+    ///
+    /// For transactions that pass the filter, full EVM execution proceeds
+    /// with receipt verification. After each transaction, `on_tx` is called
+    /// with the executed result and the current EVM database state, allowing
+    /// the caller to update pool reserves and run detection strategies.
+    ///
+    /// # Polygon
+    /// For chain 137, BLS12-377 precompiles are registered and the EVM spec
+    /// is selected based on block number before replay begins.
     pub fn replay_each_filtered(
         &self,
         block_num: u64,
