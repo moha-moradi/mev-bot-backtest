@@ -732,7 +732,7 @@ impl PoolManager {
 
     /// Check if the given address is the wrapped native token (e.g., WMATIC, WETH).
     pub fn is_wrapped_native(&self, token: &Address) -> bool {
-        self.wrapped_native.as_ref().map_or(false, |wn| token == wn)
+        self.wrapped_native.as_ref() == Some(token)
     }
 
     /// Get V2 pool state by address (returns None if not a V2 pool or not found).

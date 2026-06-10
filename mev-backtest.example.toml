@@ -41,8 +41,20 @@ cache_dir = "./cache"
 # Fast mode (skip token widening in tx filter)
 fast_mode = false
 
-# Gas limit for arb cost estimation
+# CoinGecko API key for USD price conversion (optional)
+# If present, USD values are computed from live prices; free tier works without
+# coingecko_api_key = "CG-..."
+
+# Gas limit for arb cost estimation (per-strategy overrides optional)
 gas_limit = 200000
+
+# Per-strategy gas limit overrides (optional — override the default limits)
+# [gas_limits]
+# two_hop_arb = 150000
+# multi_hop_arb = 300000
+# jit = 300000
+# jit_arb = 350000
+# sandwich = 200000
 
 # ─────────────────────────────────────────────────────────────
 # Per-chain configurations
