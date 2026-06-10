@@ -277,7 +277,16 @@ pub struct GasConfig {
 
 impl GasConfig {
     /// Strategy-specific default gas limits based on empirical observations.
-    pub fn gas_limit_for_strategy(&self, strategy: Strategy) -> u64 {
+    /// `overrides` can supply per-strategy overrides keyed by strategy name.
+    pub fn gas_limit_for_strategy(
+        &self,
+        strategy: Strategy,
+        overrides: &std::collections::HashMap<String, u64>,
+    ) -> u64 {
+        let key = strategy.to_string();
+        if let Some(&limit) = overrides.get(&key) {
+            return limit;
+        }
         match strategy {
             Strategy::TwoHopArb => 150_000,
             Strategy::MultiHopArb => 300_000,
@@ -287,8 +296,13 @@ impl GasConfig {
         }
     }
 
-    pub fn compute_gas_cost(&self, strategy: Strategy, base_fee_per_gas: u128) -> u128 {
-        let gas_limit = self.gas_limit_for_strategy(strategy);
+    pub fn compute_gas_cost(
+        &self,
+        strategy: Strategy,
+        base_fee_per_gas: u128,
+        overrides: &std::collections::HashMap<String, u64>,
+    ) -> u128 {
+        let gas_limit = self.gas_limit_for_strategy(strategy, overrides);
         let pf_wei = (self.priority_fee_gwei * 1_000_000_000.0) as u128;
         let effective_price = match self.gas_model {
             GasModel::HistoricalExact => base_fee_per_gas.saturating_add(pf_wei),
@@ -477,7 +491,7 @@ mod tests {
     #[test]
     fn test_gas_config_default_compute_historical_exact() {
         let cfg = GasConfig::default();
-        let cost = cfg.compute_gas_cost(Strategy::TwoHopArb, 50_000_000_000);
+        let cost = cfg.compute_gas_cost(Strategy::TwoHopArb, 50_000_000_000, &std::collections::HashMap::new());
         assert_eq!(cost, 150_000u128 * 50_000_000_000);
     }
 
@@ -487,7 +501,7 @@ mod tests {
             priority_fee_gwei: 2.0,
             ..GasConfig::default()
         };
-        let cost = cfg.compute_gas_cost(Strategy::TwoHopArb, 50_000_000_000u128);
+        let cost = cfg.compute_gas_cost(Strategy::TwoHopArb, 50_000_000_000u128, &std::collections::HashMap::new());
         assert_eq!(cost, 150_000u128 * 52_000_000_000u128);
     }
 
@@ -498,7 +512,7 @@ mod tests {
             priority_fee_gwei: 3.0,
             ..GasConfig::default()
         };
-        let cost = cfg.compute_gas_cost(Strategy::TwoHopArb, 50_000_000_000u128);
+        let cost = cfg.compute_gas_cost(Strategy::TwoHopArb, 50_000_000_000u128, &std::collections::HashMap::new());
         assert_eq!(cost, 150_000u128 * 3_000_000_000u128);
     }
 
@@ -509,18 +523,18 @@ mod tests {
             priority_fee_gwei: 1.0,
             ..GasConfig::default()
         };
-        let cost = cfg.compute_gas_cost(Strategy::TwoHopArb, 50_000_000_000u128);
+        let cost = cfg.compute_gas_cost(Strategy::TwoHopArb, 50_000_000_000u128, &std::collections::HashMap::new());
         assert_eq!(cost, 150_000u128 * 76_000_000_000u128);
     }
 
     #[test]
     fn test_gas_limit_per_strategy() {
         let cfg = GasConfig::default();
-        assert_eq!(cfg.gas_limit_for_strategy(Strategy::TwoHopArb), 150_000);
-        assert_eq!(cfg.gas_limit_for_strategy(Strategy::MultiHopArb), 300_000);
-        assert_eq!(cfg.gas_limit_for_strategy(Strategy::Jit), 300_000);
-        assert_eq!(cfg.gas_limit_for_strategy(Strategy::JitArb), 350_000);
-        assert_eq!(cfg.gas_limit_for_strategy(Strategy::Sandwich), 200_000);
+        assert_eq!(cfg.gas_limit_for_strategy(Strategy::TwoHopArb, &std::collections::HashMap::new()), 150_000);
+        assert_eq!(cfg.gas_limit_for_strategy(Strategy::MultiHopArb, &std::collections::HashMap::new()), 300_000);
+        assert_eq!(cfg.gas_limit_for_strategy(Strategy::Jit, &std::collections::HashMap::new()), 300_000);
+        assert_eq!(cfg.gas_limit_for_strategy(Strategy::JitArb, &std::collections::HashMap::new()), 350_000);
+        assert_eq!(cfg.gas_limit_for_strategy(Strategy::Sandwich, &std::collections::HashMap::new()), 200_000);
     }
 }
 

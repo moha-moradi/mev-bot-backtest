@@ -7,8 +7,12 @@ use crate::types::{
     ChainName, FlashLoanProvider, RangeMode, Strategy,
 };
 
+/// Per-chain runtime parameters loaded from the configuration file.
+///
+/// Contains contract addresses and discovery parameters specific to each chain.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChainConfig {
+    /// EVM chain ID (e.g. 137 = Polygon, 1 = Ethereum)
     pub chain_id: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub balancer_vault: Option<String>,
@@ -27,45 +31,49 @@ pub struct ChainConfig {
     /// Batch size (blocks) for each eth_getLogs request during pool discovery (default: 50000)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pool_discovery_batch_size: Option<u64>,
+    /// Address of the chain's wrapped native token (e.g., WMATIC on Polygon, WETH on Ethereum)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wrapped_native_token: Option<String>,
 }
 
+/// Top-level runtime configuration for MEV backtest runs.
+///
+/// Loaded from TOML files, with CLI overrides merged at startup.
+/// Controls chain selection, RPC connectivity, strategy filters, gas model,
+/// output format, caching, and per-chain contract addresses.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    // Chain and connection
+    /// Target EVM chain name (e.g. "polygon", "ethereum")
     #[serde(default = "default_chain")]
     pub chain: String,
+    /// Custom RPC endpoint; falls back to publicnode if unset
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rpc_url: Option<String>,
-
-    // Flash loan
+    /// Flash loan provider: "auto", "balancer", "aave", or "uniswap"
     #[serde(default = "default_flash_loan_provider")]
     pub flash_loan_provider: String,
-
-    // Strategies
+    /// Comma-separated strategy filter (e.g. "two_hop_arb,jit,sandwich")
     #[serde(default = "default_strategies")]
     pub strategies: String,
-
-    // Gas model
+    /// Gas cost model: "historical_exact" or "fixed"
     #[serde(default = "default_gas_model")]
     pub gas_model: String,
-
-    // Gas limit for arb tx cost estimation
+    /// Gas limit used for arb tx cost estimation
     #[serde(default = "default_gas_limit")]
     pub gas_limit: u64,
-
-    // Priority fee premium in gwei (added on top of base fee)
+    /// Priority fee premium in gwei (added on top of base fee)
     #[serde(default = "default_priority_fee_gwei")]
     pub priority_fee_gwei: f64,
-
-    // Output
+    /// Output format: "table", "json", or "csv"
     #[serde(default = "default_output_format")]
     pub output: String,
+    /// Directory for result exports
     #[serde(default = "default_export_path")]
     pub export_path: String,
+    /// Directory for on-disk block/tx cache
     #[serde(default = "default_cache_dir")]
     pub cache_dir: String,
-
-    // Block range (not serialized to TOML directly, handled via CLI merge)
+    /// Block range (not serialized to TOML directly, handled via CLI merge)
     #[serde(skip)]
     pub days: Option<u64>,
     #[serde(skip)]
@@ -76,14 +84,19 @@ pub struct Config {
     pub from_block: Option<u64>,
     #[serde(skip)]
     pub to_block: Option<u64>,
-
-    // Per-chain configuration
+    /// Per-chain configuration overrides keyed by chain name
     #[serde(default)]
     pub chains: HashMap<String, ChainConfig>,
-
-    // Config file path
+    /// Path to the loaded config file, if any
     #[serde(skip)]
     pub config_path: Option<PathBuf>,
+    /// CoinGecko API key for USD price lookups. Optional — free tier works but is rate-limited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coingecko_api_key: Option<String>,
+    /// Optional per-strategy gas limit overrides.
+    /// Keys are strategy names like "two_hop_arb", "sandwich", etc.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub gas_limits: std::collections::HashMap<String, u64>,
 }
 
 fn default_chain() -> String {
@@ -142,6 +155,8 @@ impl Default for Config {
             to_block: None,
             chains: default_chains(),
             config_path: None,
+            coingecko_api_key: None,
+            gas_limits: std::collections::HashMap::new(),
         }
     }
 }
@@ -163,6 +178,7 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             uniswap_v2_factories: Some(polygon_factories),
             pool_discovery_start_block: None,
             pool_discovery_batch_size: None,
+            wrapped_native_token: Some("0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270".to_string()),
         },
     );
     let avalanche_factories = vec![
@@ -180,6 +196,7 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             uniswap_v2_factories: Some(avalanche_factories),
             pool_discovery_start_block: None,
             pool_discovery_batch_size: None,
+            wrapped_native_token: Some("0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7".to_string()),
         },
     );
     let bsc_factories = vec![
@@ -197,6 +214,7 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             uniswap_v2_factories: Some(bsc_factories),
             pool_discovery_start_block: None,
             pool_discovery_batch_size: None,
+            wrapped_native_token: Some("0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c".to_string()),
         },
     );
     let arbitrum_factories = vec![
@@ -213,6 +231,7 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             uniswap_v2_factories: Some(arbitrum_factories),
             pool_discovery_start_block: None,
             pool_discovery_batch_size: None,
+            wrapped_native_token: Some("0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string()),
         },
     );
     let base_factories = vec![
@@ -229,6 +248,7 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             uniswap_v2_factories: Some(base_factories),
             pool_discovery_start_block: None,
             pool_discovery_batch_size: None,
+            wrapped_native_token: Some("0x4200000000000000000000000000000000000006".to_string()),
         },
     );
     let ethereum_factories = vec![
@@ -247,6 +267,7 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             uniswap_v2_factories: Some(ethereum_factories),
             pool_discovery_start_block: None,
             pool_discovery_batch_size: None,
+            wrapped_native_token: Some("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2".to_string()),
         },
     );
     let optimism_factories = vec![
@@ -263,12 +284,18 @@ fn default_chains() -> HashMap<String, ChainConfig> {
             uniswap_v2_factories: Some(optimism_factories),
             pool_discovery_start_block: None,
             pool_discovery_batch_size: None,
+            wrapped_native_token: Some("0x4200000000000000000000000000000000000006".to_string()),
         },
     );
     m
 }
 
 impl Config {
+    /// Parse a TOML configuration file from disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be read or parsed as valid TOML.
     pub fn load(path: &str) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| anyhow::anyhow!("Failed to read config file '{}': {}", path, e))?;
@@ -278,12 +305,14 @@ impl Config {
         Ok(cfg)
     }
 
+    /// Load a config file, falling back to defaults if the file is missing or invalid.
     pub fn load_or_default(path: &str) -> Self {
         let mut cfg = Self::load(path).unwrap_or_default();
         cfg.config_path = Some(PathBuf::from(path));
         cfg
     }
 
+    /// Return a Config pre-populated with all 7 default chain configurations.
     pub fn default_with_chains() -> Self {
         Config::default()
     }
@@ -360,6 +389,7 @@ pub struct CliOverrides {
     pub output: Option<String>,
     pub export_path: Option<String>,
     pub cache_dir: Option<String>,
+    pub coingecko_api_key: Option<String>,
 }
 
 impl Config {
@@ -408,6 +438,9 @@ impl Config {
         }
         if let Some(v) = &overrides.cache_dir {
             self.cache_dir = v.clone();
+        }
+        if let Some(v) = &overrides.coingecko_api_key {
+            self.coingecko_api_key = Some(v.clone());
         }
     }
 }
@@ -502,6 +535,7 @@ rpc_url = "https://eth.diy"
             output: Some("json".into()),
             export_path: Some("./out".into()),
             cache_dir: Some("./db".into()),
+            coingecko_api_key: Some("test-key".into()),
         };
         let mut cfg = Config::default();
         cfg.merge_cli(&overrides);
@@ -516,6 +550,7 @@ rpc_url = "https://eth.diy"
         assert_eq!(cfg.output, "json");
         assert_eq!(cfg.export_path, "./out");
         assert_eq!(cfg.cache_dir, "./db");
+        assert_eq!(cfg.coingecko_api_key, Some("test-key".into()));
     }
 
     #[test]
@@ -528,6 +563,7 @@ rpc_url = "https://eth.diy"
             flash_loan_provider: None, strategies: None,
             gas_model: None, gas_limit: None, priority_fee_gwei: None,
             output: None, export_path: None, cache_dir: None,
+            coingecko_api_key: None,
         };
         cfg.merge_cli(&overrides);
         assert_eq!(cfg.days, Some(7));

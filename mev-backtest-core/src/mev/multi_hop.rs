@@ -163,7 +163,7 @@ impl MultiHopArbDetector {
             return None;
         }
 
-        let gas_cost_wei = gas_config.compute_gas_cost(Strategy::MultiHopArb, base_fee_per_gas);
+        let gas_cost_wei = gas_config.compute_gas_cost(Strategy::MultiHopArb, base_fee_per_gas, &std::collections::HashMap::new());
 
         Some(MevOpportunity {
             block_number,
