@@ -839,3 +839,70 @@ fn test_jit_arb_detection_synthetic() {
     assert_eq!(opps[0].tick_lower, Some(-100));
     assert_eq!(opps[0].tick_upper, Some(100));
 }
+
+/// ── Cross-DEX V2→V3 Real RPC Test ────────────────────────────────────────────
+#[tokio::test]
+async fn test_real_v2_v3_cross_dex_polygon() {
+    let rpc_url = match rpc_url() {
+        Some(url) => url,
+        None => { eprintln!("Skipping: RPC_URL not set"); return; }
+    };
+
+    let rpc = match mev_backtest_core::rpc::RpcClient::new(&rpc_url, 137) {
+        Ok(r) => r,
+        Err(e) => { eprintln!("Skipping: failed to create RPC client: {e}"); return; }
+    };
+
+    let block_num = match rpc.get_block_number().await {
+        Ok(n) => n.saturating_sub(10),
+        Err(e) => { eprintln!("Skipping: failed to get block number: {e}"); return; }
+    };
+
+    // Load a real V2 pool from the Polygon registry
+    let all = load_polygon_registry();
+    let v2 = all.iter()
+        .find(|p| p.address == address!("6e7a5fafcec6bb1e78bae2a1f0b612012bf14827"))
+        .expect("QuickSwap WMATIC/USDC V2 missing from registry");
+
+    // Construct a real V3 pool (not in registry, but exists on-chain)
+    // Uniswap V3 WMATIC/USDC 0.05% pool on Polygon
+    let v3_info = mev_backtest_core::pool::state::PoolInfo {
+        address: address!("a374094527e1673a86de625aa59517c5de346d32"),
+        token0: wmatic(),
+        token1: usdc(),
+        fee: 500,
+        name: Some("Uniswap V3 WMATIC/USDC 0.05%".into()),
+        dex_type: mev_backtest_core::pool::dex_type::DexType::UniswapV3,
+        tick_spacing: Some(10),
+    };
+
+    let mut pm = mev_backtest_core::pool::state::PoolManager::new();
+    pm.add_pool(pool_info_to_state(v2.clone()));
+    pm.add_pool(mev_backtest_core::pool::state::PoolState::UniswapV3(
+        mev_backtest_core::pool::state::UniswapV3PoolState::new(v3_info),
+    ));
+
+    pm.init_from_rpc(&rpc, block_num).await;
+
+    let initialized = pm.initialized_count();
+    eprintln!("Initialized {}/2 pools (V2 QuickSwap + V3 Uniswap V3) at block {block_num}", initialized);
+
+    if initialized < 2 {
+        eprintln!("Skipping: fewer than 2 pools initialized (got {initialized})");
+        return;
+    }
+
+    // Run TwoHopArb detection across the V2+V3 pools
+    let opps = TwoHopArbDetector::detect(
+        &pm, block_num, 0, block_num, 50_000_000_000, GasConfig::default(),
+    );
+
+    eprintln!("TwoHopArb detected {} cross-DEX (V2→V3) opportunities at block {block_num}", opps.len());
+
+    // V2 and V3 pools for the same pair almost always differ in price → arb exists
+    assert!(!opps.is_empty(), "Should detect arb between V2 and V3 pools with different pricing");
+    for opp in &opps {
+        assert_eq!(opp.strategy, Strategy::TwoHopArb);
+        assert!(opp.expected_profit > U256::ZERO, "Profit should be > 0 on real data");
+    }
+}
