@@ -27,7 +27,7 @@ use mev_backtest_core::replay::BlockReplayer;
 use mev_backtest_core::resolver::RangeResolver;
 use mev_backtest_core::rpc::RpcClient;
 use mev_backtest_core::run::BacktestRunner;
-use mev_backtest_core::types::{GasConfig, RangeMode, Strategy};
+use mev_backtest_core::types::{ChainName, GasConfig, RangeMode, Strategy};
 
 use crate::state::{
     LogEntry, RunResult, RunState, RunStatus, SseEvent, StageStatus,
@@ -353,8 +353,16 @@ pub async fn run_pipeline(
         data: serde_json::json!({"stage": 5, "id": "aggregation", "label": "AGGREGATION"}),
     });
 
-    let agg = aggregate::aggregate(&profitable, &chain_config, &[]);
-    let ui_opportunities = crate::mapping::map_opportunities(&profitable);
+    let api_key = run_state
+        .try_read()
+        .ok()
+        .and_then(|s| s.config.coingecko_api_key.clone());
+    let mut price_cache = mev_backtest_core::coingecko::PriceCache::new(api_key);
+    let chain_name: ChainName = params.chain.parse().ok().unwrap_or(ChainName::Ethereum);
+    let usd_price = price_cache.usd_price(chain_name).await.unwrap_or(0.0);
+
+    let agg = aggregate::aggregate(&profitable, &[], chain_name, Some(&mut price_cache));
+    let ui_opportunities = crate::mapping::map_opportunities(&profitable, usd_price);
 
     let elapsed = start_time.elapsed();
     let now_secs = SystemTime::now()

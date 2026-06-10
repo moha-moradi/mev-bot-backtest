@@ -54,6 +54,7 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             output: Some(args.output.clone()),
             export_path: Some(args.export_path.clone()),
             cache_dir: Some(args.cache_dir.clone()),
+            coingecko_api_key: None,
         },
         Command::Fetch(args) => CliOverrides {
             days: args.block_range.days,
@@ -71,6 +72,7 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             output: None,
             export_path: None,
             cache_dir: None,
+            coingecko_api_key: None,
         },
         Command::Replay(args) => CliOverrides {
             days: None,
@@ -88,6 +90,7 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             output: None,
             export_path: None,
             cache_dir: Some(args.cache_dir.clone()),
+            coingecko_api_key: None,
         },
         Command::Report(args) => CliOverrides {
             days: None,
@@ -105,6 +108,7 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             output: Some(args.output.clone()),
             export_path: Some(args.export_path.clone()),
             cache_dir: None,
+            coingecko_api_key: None,
         },
         Command::Config => CliOverrides {
             days: None,
@@ -122,6 +126,7 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             output: None,
             export_path: None,
             cache_dir: None,
+            coingecko_api_key: None,
         },
         Command::Discover(args) => CliOverrides {
             days: None,
@@ -139,6 +144,7 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
             output: None,
             export_path: None,
             cache_dir: Some(args.cache_dir.clone()),
+            coingecko_api_key: None,
         },
     }
 }

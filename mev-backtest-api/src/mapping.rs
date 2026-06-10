@@ -184,6 +184,7 @@ pub fn map_opportunity(
     _pool_registry: &mev_backtest_core::pool::registry::PoolRegistry,
     is_flash_loan: bool,
     block_hash: &str,
+    usd_price: f64,
 ) -> UiOpportunity {
     let strategy = ui_strategy(opp.strategy);
     let gross = wei_to_eth(opp.expected_profit.to::<u128>());
@@ -224,6 +225,7 @@ pub fn map_opportunity(
         flash_loan_fee: flash_fee,
         builder_tip,
         net_profit: net,
+        net_profit_usd: net * usd_price,
         result: result.to_string(),
         explorer_url,
         token_pair,
@@ -247,13 +249,14 @@ pub fn map_opportunity(
 /// is inferred from the strategy (`JitArb` and `MultiHopArb` always use flash loans).
 pub fn map_opportunities(
     opportunities: &[MevOpportunity],
+    usd_price: f64,
 ) -> Vec<UiOpportunity> {
     let registry = mev_backtest_core::pool::registry::PoolRegistry;
     opportunities
         .iter()
         .map(|opp| {
             let is_fl = matches!(opp.strategy, Strategy::JitArb | Strategy::MultiHopArb);
-            map_opportunity(opp, &registry, is_fl, &format!("{:x}", opp.block_number))
+            map_opportunity(opp, &registry, is_fl, &format!("{:x}", opp.block_number), usd_price)
         })
         .collect()
 }

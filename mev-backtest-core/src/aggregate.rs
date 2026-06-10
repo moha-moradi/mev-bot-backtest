@@ -1,6 +1,6 @@
-use crate::config::ChainConfig;
+use crate::coingecko::PriceCache;
 use crate::mev::opportunity::MevOpportunity;
-use crate::types::Strategy;
+use crate::types::{ChainName, Strategy};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SummaryMetrics {
@@ -78,8 +78,9 @@ fn ui_strategy_name(strategy: Strategy) -> &'static str {
 
 pub fn aggregate(
     opportunities: &[MevOpportunity],
-    _chain: &ChainConfig,
     dexes: &[DexMeta],
+    chain: ChainName,
+    price_cache: Option<&mut PriceCache>,
 ) -> AggregationResult {
     let mut by_strategy: std::collections::HashMap<String, Vec<&MevOpportunity>> =
         std::collections::HashMap::new();
@@ -105,6 +106,14 @@ pub fn aggregate(
         .map(|o| wei_to_eth(o.gas_cost_wei))
         .sum();
     let net_profit = gross_revenue - total_gas;
+
+    let usd_price = match price_cache {
+        Some(cache) => match tokio::runtime::Handle::try_current() {
+            Ok(handle) => handle.block_on(cache.usd_price(chain)).unwrap_or(0.0),
+            Err(_) => 0.0,
+        },
+        None => 0.0,
+    };
 
     let profitable_count = opportunities
         .iter()
@@ -163,7 +172,7 @@ pub fn aggregate(
                 gross_revenue: strat_gross,
                 gas_fees: strat_gas,
                 net_profit: strat_net,
-                net_profit_usd: 0.0, // TODO: wire CoinGecko price
+                net_profit_usd: strat_net * usd_price,
                 roi,
                 avg_per_opp: avg,
                 best_opp,
@@ -231,7 +240,7 @@ pub fn aggregate(
             profitable: profitable_count,
             gross_revenue,
             net_profit,
-            net_profit_usd: 0.0, // TODO: wire CoinGecko price
+            net_profit_usd: net_profit * usd_price,
             total_cost: total_gas,
             best_strategy,
             best_single_opp,

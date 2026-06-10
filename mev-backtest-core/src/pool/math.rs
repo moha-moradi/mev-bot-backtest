@@ -2,10 +2,11 @@
 // All reverse calculations use integer arithmetic with fee denominator 10000.
 
 /// Compute output amount for a given input amount under constant product.
-/// amount_in: input token amount (wei)
-/// reserve_in: pool reserve of input token
-/// reserve_out: pool reserve of output token
-/// fee: fee in basis points (e.g. 30 = 0.3%)
+///
+/// Implements the Uniswap V2 AMM formula with fee:
+/// `dx * (10000 - fee) * reserve_out / (reserve_in * 10000 + dx * (10000 - fee))`
+///
+/// Returns `None` if the input is zero, reserves are depleted, or the output rounds to zero.
 pub fn constant_product_output_amount(
     amount_in: u128,
     reserve_in: u128,
@@ -27,6 +28,9 @@ pub fn constant_product_output_amount(
 }
 
 /// Compute required input amount for a desired output amount.
+///
+/// Uses the same constant-product formula as `constant_product_output_amount`
+/// but solves for the input. Always rounds up to avoid undershooting.
 pub fn constant_product_input_amount(
     amount_out: u128,
     reserve_in: u128,
@@ -62,6 +66,8 @@ pub struct TwoHopArbResult {
 /// then sell `shared_token` to `pool_b` (receiving `token_out` back).
 ///
 /// Uses ternary search over the concave profit function.
+///
+/// Returns `None` if the price gap is too small to cover fees (profit <= 0).
 pub fn optimal_two_hop_arb(
     pool_a_reserve_in: u128,
     pool_a_reserve_out: u128,
@@ -142,6 +148,8 @@ fn simulate_two_hop(
 ///
 /// `quote_fn(x)` returns the output amount for input `x` through the entire pool chain.
 /// Returns `Some((optimal_input, output_amount))` or `None` if no profitable path found.
+///
+/// `output_amount` is guaranteed to be strictly greater than `optimal_input` when `Some`.
 pub fn optimal_n_hop_generic(
     max_input: u128,
     quote_fn: &impl Fn(u128) -> Option<u128>,
@@ -190,12 +198,13 @@ pub fn optimal_n_hop_generic(
     best
 }
 
-/// Find the optimal input amount for a two-hop arbitrage using generic quoting functions.
+/// Version of `optimal_two_hop_arb` that accepts generic quoting functions.
 ///
-/// `quote_a(x)`: returns the amount of bridge token received from pool A when spending `x` of token_in.
-/// `quote_b(x)`: returns the amount of token_out received from pool B when spending `x` of the bridge token.
+/// `quote_a(x)` returns the amount of bridge token received from pool A when spending `x` of token_in.
+/// `quote_b(x)` returns the amount of `token_out` received from pool B when spending `x` of the bridge token.
 ///
-/// Uses ternary search over the profit function: `profit(x) = quote_b(quote_a(x)) - x`.
+/// Uses ternary search on the profit function: `profit(x) = quote_b(quote_a(x)) - x`.
+/// Returns `None` when no profitable input exists (profit <= 0 for all inputs).
 pub fn optimal_two_hop_arb_generic(
     max_input: u128,
     quote_a: &impl Fn(u128) -> Option<u128>,

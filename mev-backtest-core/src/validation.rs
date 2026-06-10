@@ -3,6 +3,10 @@ use crate::types::{
     ChainName, FlashLoanProvider, GasModel, OutputFormat, RangeMode, Strategy,
 };
 
+/// Resolved configuration returned by successful validation.
+///
+/// Contains the parsed and normalized runtime parameters (chain, range, strategies,
+/// flash loan provider, gas model) that the backtest engine consumes.
 #[derive(Debug)]
 pub struct ValidationResult {
     pub chain_name: ChainName,
@@ -13,6 +17,9 @@ pub struct ValidationResult {
     pub gas_model: GasModel,
 }
 
+/// Validation failure returned when the supplied config is invalid.
+///
+/// Implements `std::error::Error` so callers can use `?` in `Result` chains.
 #[derive(Debug)]
 pub enum ValidationError {
     Message(String),

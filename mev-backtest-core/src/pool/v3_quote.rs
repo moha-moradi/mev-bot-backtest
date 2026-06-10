@@ -354,6 +354,13 @@ fn get_tick_at_sqrt_ratio(sqrt_price_x96: U256) -> i32 {
     high
 }
 
+/// Quote a Uniswap V3 exact-input swap.
+///
+/// Simulates stepping through the pool's initialized ticks, crossing each one
+/// while applying the fee, until `amount_in` is consumed or there are no more
+/// reachable ticks. Returns the total amount of `token_out` the swap would receive.
+///
+/// Returns `None` for zero input, zero liquidity, or zero sqrt-price.
 pub fn quote_v3_exact_in(
     pool: &UniswapV3PoolState,
     amount_in: u128,

@@ -1,8 +1,17 @@
+/// Data contract for detected MEV opportunities and persisted results files.
+///
+/// These types are the serialization boundary between the core backtest engine,
+/// the CLI output layer, and the API serialization layer.
 use alloy::primitives::{Address, U256};
 use serde::{Deserialize, Serialize};
 use crate::types::Strategy;
 
 /// A detected MEV opportunity from backtesting.
+///
+/// Different strategies populate different optional fields:
+/// - `path` for multi-hop strategies,
+/// - `tick_lower`/`tick_upper`/`liquidity_amount` for JIT strategies,
+/// - `victim_tx_index`/`backrun_tx_index` for sandwich attacks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MevOpportunity {
     /// Block where the opportunity was detected
@@ -48,6 +57,8 @@ pub struct MevOpportunity {
 }
 
 /// Saved results file wrapping opportunities with run metadata.
+///
+/// Written to `export_path` and re-read by the `report` subcommand.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResultsFile {
     pub run_id: String,

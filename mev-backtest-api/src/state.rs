@@ -70,6 +70,7 @@ pub struct UiOpportunity {
     pub flash_loan_fee: f64,
     pub builder_tip: f64,
     pub net_profit: f64,
+    pub net_profit_usd: f64,
     pub result: String,
     pub explorer_url: String,
 

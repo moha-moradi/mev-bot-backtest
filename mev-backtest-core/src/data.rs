@@ -1,7 +1,14 @@
+/// Wire-format data types returned by the JSON-RPC client and used internally.
+///
+/// These structs map directly to raw Ethereum JSON-RPC response fields and are
+/// intentionally kept close to the underlying RPC schema so conversions remain
+/// obvious. Internal extended types (`ExecutedTx`, `ExecutedLog`) carry fields
+/// populated by the block replayer that do not appear on the wire.
 use alloy::primitives::{Address, B256, Bytes, U256};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Raw block header fields from `eth_getBlockByNumber`.
 pub struct BlockData {
     pub number: u64,
     pub hash: B256,
@@ -13,6 +20,7 @@ pub struct BlockData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Raw transaction fields from `eth_getTransactionByHash`.
 pub struct TxData {
     pub hash: B256,
     pub index: u64,
@@ -28,12 +36,14 @@ pub struct TxData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// An entry in a transaction's access list (address + storage slots).
 pub struct AccessListItem {
     pub address: Address,
     pub slots: Vec<B256>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Receipt fields from `eth_getTransactionReceipt`.
 pub struct ReceiptData {
     pub tx_hash: B256,
     pub tx_index: u64,
@@ -45,6 +55,7 @@ pub struct ReceiptData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Single log entry emitted during transaction execution.
 pub struct LogData {
     pub address: Address,
     pub topics: Vec<B256>,
@@ -59,6 +70,7 @@ pub struct AccountData {
 }
 
 #[derive(Debug, Clone)]
+/// Transaction as executed during block replay (includes emulated state).
 pub struct ExecutedTx {
     pub tx_hash: B256,
     pub index: u64,
@@ -71,6 +83,7 @@ pub struct ExecutedTx {
 }
 
 #[derive(Debug, Clone)]
+/// Single log entry produced during EVM replay (address + topics + data).
 pub struct ExecutedLog {
     pub address: Address,
     pub topics: Vec<B256>,
