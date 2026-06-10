@@ -486,7 +486,7 @@ mod tests {
 
     #[test]
     fn test_load_or_default_missing_file() {
-        let cfg = Config::load_or_default("/nonexistent/path/mev-backtest.toml");
+        let cfg = Config::load_or_default("/nonexistent/path/mev-scout.toml");
         assert_eq!(cfg.chain, "polygon");
     }
 

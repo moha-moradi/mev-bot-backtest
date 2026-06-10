@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────
-# MEV Backtest Engine — Example Configuration
-# Copy this to mev-backtest.toml and edit as needed.
+# MEV Scout — Example Configuration
+# Copy this to mev-scout.toml and edit as needed.
 # All fields shown; any omitted field uses its default value.
 # ─────────────────────────────────────────────────────────────
 

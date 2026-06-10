@@ -25,7 +25,7 @@ All endpoints return JSON unless otherwise noted.
 ### Start the server
 
 ```bash
-RUST_LOG=info RESULTS_DIR=./results cargo run --package mev-backtest-api
+RUST_LOG=info RESULTS_DIR=./results cargo run --package mev-scout-api
 ```
 
 ### Frontend workflow

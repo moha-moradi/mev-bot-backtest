@@ -28,7 +28,7 @@ async fn test_e2e_discover_ethereum_v2_pools() {
         }
     };
 
-    let rpc = match mev_backtest_core::rpc::RpcClient::new(&rpc_url, 1) {
+    let rpc = match mev_scout_core::rpc::RpcClient::new(&rpc_url, 1) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("Skipping: failed to create RPC client: {e}");
@@ -38,7 +38,7 @@ async fn test_e2e_discover_ethereum_v2_pools() {
 
     let factory = eth_uniswap_v2_factory();
     let cache_dir = temp_cache_dir();
-    let cache = match mev_backtest_core::cache::CacheStore::open(
+    let cache = match mev_scout_core::cache::CacheStore::open(
         cache_dir.to_str().unwrap(), 1,
     ) {
         Ok(c) => c,
@@ -49,7 +49,7 @@ async fn test_e2e_discover_ethereum_v2_pools() {
     };
 
     // Scan a range with known PairCreated events
-    let pools = match mev_backtest_core::pool::discovery::discover_v2_pools(
+    let pools = match mev_scout_core::pool::discovery::discover_v2_pools(
         &rpc, factory, 20_000_000, 20_001_000,
     ).await {
         Ok(p) => p,
@@ -66,12 +66,12 @@ async fn test_e2e_discover_ethereum_v2_pools() {
         assert_ne!(pool.address, alloy::primitives::Address::ZERO, "Pool address should not be zero");
         assert_ne!(pool.token0, alloy::primitives::Address::ZERO, "token0 should not be zero");
         assert_ne!(pool.token1, alloy::primitives::Address::ZERO, "token1 should not be zero");
-        assert_eq!(pool.dex_type, mev_backtest_core::pool::dex_type::DexType::UniswapV2);
+        assert_eq!(pool.dex_type, mev_scout_core::pool::dex_type::DexType::UniswapV2);
         assert_eq!(pool.fee, 0, "V2 discovered pools should have fee=0");
     }
 
     // Test cache roundtrip
-    let info: mev_backtest_core::pool::state::PoolInfo = pools[0].clone().into();
+    let info: mev_scout_core::pool::state::PoolInfo = pools[0].clone().into();
     cache.put_discovered_pool(&info).unwrap();
     let cached = cache.get_discovered_pool(&info.address).unwrap();
     assert!(cached.is_some(), "Pool should be retrievable from cache");
@@ -102,7 +102,7 @@ async fn test_e2e_discover_with_batching() {
         }
     };
 
-    let rpc = match mev_backtest_core::rpc::RpcClient::new(&rpc_url, 1) {
+    let rpc = match mev_scout_core::rpc::RpcClient::new(&rpc_url, 1) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("Skipping: failed to create RPC client: {e}");
@@ -112,7 +112,7 @@ async fn test_e2e_discover_with_batching() {
 
     let factory = eth_uniswap_v2_factory();
     let cache_dir = temp_cache_dir();
-    let cache = match mev_backtest_core::cache::CacheStore::open(
+    let cache = match mev_scout_core::cache::CacheStore::open(
         cache_dir.to_str().unwrap(), 1,
     ) {
         Ok(c) => c,
@@ -122,7 +122,7 @@ async fn test_e2e_discover_with_batching() {
         }
     };
 
-    let total = match mev_backtest_core::pool::discovery::discover_pools(
+    let total = match mev_scout_core::pool::discovery::discover_pools(
         &rpc, &cache, &[factory], &[], 20_000_000, 20_001_000, 100,
     ).await {
         Ok(n) => n,
@@ -158,7 +158,7 @@ async fn test_e2e_discover_ethereum_v3_pools() {
         }
     };
 
-    let rpc = match mev_backtest_core::rpc::RpcClient::new(&rpc_url, 1) {
+    let rpc = match mev_scout_core::rpc::RpcClient::new(&rpc_url, 1) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("Skipping: failed to create RPC client: {e}");
@@ -169,7 +169,7 @@ async fn test_e2e_discover_ethereum_v3_pools() {
     let factory = eth_uniswap_v3_factory();
 
     // Scan a range with known V3 PoolCreated events (Uniswap V3 launched around block 12_369_621)
-    let pools = match mev_backtest_core::pool::discovery::discover_v3_pools(
+    let pools = match mev_scout_core::pool::discovery::discover_v3_pools(
         &rpc, factory, 12_369_700, 12_370_000,
     ).await {
         Ok(p) => p,
@@ -185,7 +185,7 @@ async fn test_e2e_discover_ethereum_v3_pools() {
         assert_ne!(pool.address, alloy::primitives::Address::ZERO, "Pool address should not be zero");
         assert_ne!(pool.token0, alloy::primitives::Address::ZERO, "token0 should not be zero");
         assert_ne!(pool.token1, alloy::primitives::Address::ZERO, "token1 should not be zero");
-        assert_eq!(pool.dex_type, mev_backtest_core::pool::dex_type::DexType::UniswapV3);
+        assert_eq!(pool.dex_type, mev_scout_core::pool::dex_type::DexType::UniswapV3);
         let valid_fees = [100, 500, 3000, 10000];
         assert!(valid_fees.contains(&pool.fee),
             "V3 fee should be one of 100/500/3000/10000, got {}", pool.fee);
@@ -199,7 +199,7 @@ async fn test_e2e_discover_ethereum_v3_pools() {
 #[tokio::test]
 async fn test_e2e_v3_swap_decoding() {
     use alloy::rpc::types::Filter;
-    use mev_backtest_core::pool::decoders::{decode_v3_swap, V3_SWAP_TOPIC};
+    use mev_scout_core::pool::decoders::{decode_v3_swap, V3_SWAP_TOPIC};
 
     let rpc_url = match rpc_url() {
         Some(url) => url,
@@ -209,7 +209,7 @@ async fn test_e2e_v3_swap_decoding() {
         }
     };
 
-    let rpc = match mev_backtest_core::rpc::RpcClient::new(&rpc_url, 1) {
+    let rpc = match mev_scout_core::rpc::RpcClient::new(&rpc_url, 1) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("Skipping: failed to create RPC client: {e}");
@@ -253,7 +253,7 @@ async fn test_e2e_v3_swap_decoding() {
 
     // Parse the first swap log into ExecutedLog format
     let log = &logs[0];
-    let executed_log = mev_backtest_core::data::ExecutedLog {
+    let executed_log = mev_scout_core::data::ExecutedLog {
         address: log.address().into(),
         topics: log.topics().to_vec(),
         data: log.data().data.clone(),

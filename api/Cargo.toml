@@ -1,10 +1,10 @@
 [package]
-name = "mev-backtest-api"
+name = "mev-scout-api"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-mev-backtest-core = { path = "../mev-backtest-core" }
+mev-scout-core = { path = "../core" }
 axum = { version = "0.8", features = ["macros"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }

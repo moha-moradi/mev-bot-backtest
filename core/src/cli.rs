@@ -1,9 +1,8 @@
 use clap::{Args, Parser, Subcommand};
 
-/// MEV Bot Backtest Engine — high-fidelity historical backtest
-/// for EVM-compatible chains.
+/// MEV Scout — MEV opportunity scanner & backtester for EVM-compatible chains.
 #[derive(Parser, Debug)]
-#[command(name = "mev-backtest", version, about)]
+#[command(name = "mev-scout", version, about)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,

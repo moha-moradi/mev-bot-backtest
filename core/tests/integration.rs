@@ -1,11 +1,11 @@
 use alloy::primitives::{address, b256, Address, B256, U256};
-use mev_backtest_core::mev::two_hop::TwoHopArbDetector;
-use mev_backtest_core::pool::dex_type::DexType;
-use mev_backtest_core::pool::state::UniswapV2PoolState;
-use mev_backtest_core::pool::state::{PoolInfo, PoolManager, PoolState};
-use mev_backtest_core::mev::jit::JitDetector;
-use mev_backtest_core::mev::sandwich::SandwichDetector;
-use mev_backtest_core::types::{GasConfig, Strategy};
+use mev_scout_core::mev::two_hop::TwoHopArbDetector;
+use mev_scout_core::pool::dex_type::DexType;
+use mev_scout_core::pool::state::UniswapV2PoolState;
+use mev_scout_core::pool::state::{PoolInfo, PoolManager, PoolState};
+use mev_scout_core::mev::jit::JitDetector;
+use mev_scout_core::mev::sandwich::SandwichDetector;
+use mev_scout_core::types::{GasConfig, Strategy};
 
 /// ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -21,14 +21,14 @@ fn pool_info_to_state(info: PoolInfo) -> PoolState {
             reserve1: 0,
         }),
         DexType::UniswapV3 => {
-            PoolState::UniswapV3(mev_backtest_core::pool::state::UniswapV3PoolState::new(info))
+            PoolState::UniswapV3(mev_scout_core::pool::state::UniswapV3PoolState::new(info))
         }
-        DexType::Curve => PoolState::Curve(mev_backtest_core::pool::state::CurvePoolState {
+        DexType::Curve => PoolState::Curve(mev_scout_core::pool::state::CurvePoolState {
             info,
             balances: vec![],
             token_index: std::collections::HashMap::new(),
         }),
-        DexType::Balancer => PoolState::Balancer(mev_backtest_core::pool::state::BalancerPoolState {
+        DexType::Balancer => PoolState::Balancer(mev_scout_core::pool::state::BalancerPoolState {
             info,
             balances: vec![],
             token_index: std::collections::HashMap::new(),
@@ -41,7 +41,7 @@ fn load_polygon_registry() -> Vec<PoolInfo> {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let pool_path = manifest.parent().unwrap().join("pools/polygon.json");
     let path_str = pool_path.to_str().unwrap();
-    mev_backtest_core::pool::registry::PoolRegistry::load(path_str).unwrap()
+    mev_scout_core::pool::registry::PoolRegistry::load(path_str).unwrap()
 }
 
 fn wmatic() -> Address {
@@ -72,7 +72,7 @@ fn make_pool(addr: Address, token0: Address, token1: Address, r0: u128, r1: u128
             token1,
             fee: 30,
             name: None,
-            dex_type: mev_backtest_core::pool::dex_type::DexType::UniswapV2,
+            dex_type: mev_scout_core::pool::dex_type::DexType::UniswapV2,
             tick_spacing: None,
         },
         reserve0: r0,
@@ -85,7 +85,7 @@ fn test_pool_registry_loads() {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let pool_path = manifest.parent().unwrap().join("pools/polygon.json");
     let path_str = pool_path.to_str().unwrap();
-    let pools = mev_backtest_core::pool::registry::PoolRegistry::load_optional(Some(path_str));
+    let pools = mev_scout_core::pool::registry::PoolRegistry::load_optional(Some(path_str));
     assert!(!pools.is_empty(), "Pool registry should load pools from {}", path_str);
     assert!(pools.len() >= 45, "Should have at least 45 pools, got {}. Path: {}", pools.len(), path_str);
 }
@@ -267,7 +267,7 @@ fn test_two_hop_same_token_different_reserves() {
 
 #[test]
 fn test_two_hop_v3_reserves_update_accuracy() {
-    use mev_backtest_core::pool::state::UniswapV3PoolState;
+    use mev_scout_core::pool::state::UniswapV3PoolState;
     use std::collections::HashMap;
 
     // V3 pool with concentrated liquidity
@@ -279,7 +279,7 @@ fn test_two_hop_v3_reserves_update_accuracy() {
             token1: usdc(),
             fee: 30,
             name: None,
-            dex_type: mev_backtest_core::pool::dex_type::DexType::UniswapV3,
+            dex_type: mev_scout_core::pool::dex_type::DexType::UniswapV3,
             tick_spacing: Some(60),
         },
         sqrt_price_x96: U256::from(79228162514264337593543950336u128), // price = 1.0
@@ -305,7 +305,7 @@ fn test_two_hop_v3_reserves_update_accuracy() {
 
 #[test]
 fn test_multi_hop_detection_three_pool() {
-    use mev_backtest_core::mev::multi_hop::MultiHopArbDetector;
+    use mev_scout_core::mev::multi_hop::MultiHopArbDetector;
 
     let mut pm = PoolManager::new();
 
@@ -349,7 +349,7 @@ fn test_multi_hop_detection_three_pool() {
 
 #[test]
 fn test_multi_hop_path_field_populated() {
-    use mev_backtest_core::mev::multi_hop::MultiHopArbDetector;
+    use mev_scout_core::mev::multi_hop::MultiHopArbDetector;
 
     let mut pm = PoolManager::new();
     pm.add_pool(make_pool(
@@ -378,7 +378,7 @@ fn test_multi_hop_path_field_populated() {
 /// ── Sandwich Detection Tests ─────────────────────────────────────────────────
 #[test]
 fn test_sandwich_detection_synthetic() {
-    use mev_backtest_core::data::ExecutedLog;
+    use mev_scout_core::data::ExecutedLog;
 
     let pool = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     let alice = address!("1111111111111111111111111111111111111111");
@@ -460,7 +460,7 @@ async fn test_real_state_initialization_and_two_hop() {
         None => { eprintln!("Skipping: RPC_URL not set"); return; }
     };
 
-    let rpc = match mev_backtest_core::rpc::RpcClient::new(&rpc_url, 137) {
+    let rpc = match mev_scout_core::rpc::RpcClient::new(&rpc_url, 137) {
         Ok(r) => r,
         Err(e) => { eprintln!("Skipping: failed to create RPC client: {e}"); return; }
     };
@@ -518,7 +518,7 @@ async fn test_real_multi_hop_detection() {
         None => { eprintln!("Skipping: RPC_URL not set"); return; }
     };
 
-    let rpc = match mev_backtest_core::rpc::RpcClient::new(&rpc_url, 137) {
+    let rpc = match mev_scout_core::rpc::RpcClient::new(&rpc_url, 137) {
         Ok(r) => r,
         Err(e) => { eprintln!("Skipping: failed to create RPC client: {e}"); return; }
     };
@@ -558,7 +558,7 @@ async fn test_real_multi_hop_detection() {
     }
 
     // Run MultiHopArb detection
-    let opps = mev_backtest_core::mev::multi_hop::MultiHopArbDetector::detect(
+    let opps = mev_scout_core::mev::multi_hop::MultiHopArbDetector::detect(
         &pm, block_num, 0, block_num, 50_000_000_000, GasConfig::default(),
     );
 
@@ -585,7 +585,7 @@ async fn test_real_detection_all_sushi_wmatic_pools() {
         None => { eprintln!("Skipping: RPC_URL not set"); return; }
     };
 
-    let rpc = match mev_backtest_core::rpc::RpcClient::new(&rpc_url, 137) {
+    let rpc = match mev_scout_core::rpc::RpcClient::new(&rpc_url, 137) {
         Ok(r) => r,
         Err(e) => { eprintln!("Skipping: failed to create RPC client: {e}"); return; }
     };
@@ -637,7 +637,7 @@ async fn test_real_detection_all_sushi_wmatic_pools() {
     assert!(!opps.is_empty(), "Should detect two-hop arb across multiple WMATIC pools");
 
     // MultiHopArb
-    let mhop_opps = mev_backtest_core::mev::multi_hop::MultiHopArbDetector::detect(
+    let mhop_opps = mev_scout_core::mev::multi_hop::MultiHopArbDetector::detect(
         &pm, block_num, 0, block_num, 50_000_000_000, GasConfig::default(),
     );
     eprintln!("MultiHopArb detected {} opportunities across {count} real pools", mhop_opps.len());
@@ -651,8 +651,8 @@ async fn test_real_detection_all_sushi_wmatic_pools() {
 
 #[test]
 fn test_jit_detection_synthetic() {
-    use mev_backtest_core::pool::decoders::{V3_SWAP_TOPIC, V3_MINT_TOPIC, V3_BURN_TOPIC};
-    use mev_backtest_core::data::ExecutedLog;
+    use mev_scout_core::pool::decoders::{V3_SWAP_TOPIC, V3_MINT_TOPIC, V3_BURN_TOPIC};
+    use mev_scout_core::data::ExecutedLog;
     use alloy::primitives::{address, Bytes, B256};
 
     let pool = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
@@ -700,7 +700,7 @@ fn test_jit_detection_synthetic() {
     detector.process_tx(1, &[v3_swap_log(pool)], None);
     let mut opps = detector.detect(timestamp);
     assert!(!opps.is_empty(), "Mint+Swap should trigger JIT detection");
-    assert_eq!(opps[0].strategy, mev_backtest_core::types::Strategy::Jit);
+    assert_eq!(opps[0].strategy, mev_scout_core::types::Strategy::Jit);
     assert_eq!(opps[0].pool_a, pool);
     assert_eq!(opps[0].tick_lower, Some(-1000));
     assert_eq!(opps[0].tick_upper, Some(1000));
@@ -722,7 +722,7 @@ async fn test_real_v3_mint_swap_burn_detection() {
         None => { eprintln!("Skipping: RPC_URL not set"); return; }
     };
 
-    let rpc = match mev_backtest_core::rpc::RpcClient::new(&rpc_url, 137) {
+    let rpc = match mev_scout_core::rpc::RpcClient::new(&rpc_url, 137) {
         Ok(r) => r,
         Err(e) => { eprintln!("Skipping: failed to create RPC client: {e}"); return; }
     };
@@ -734,7 +734,7 @@ async fn test_real_v3_mint_swap_burn_detection() {
 
     // Load a real V3 pool (e.g., QuickSwap USDC/WMATIC V3)
     let registry = load_polygon_registry();
-    let v3_pools: Vec<_> = registry.iter().filter(|p| p.dex_type == mev_backtest_core::pool::dex_type::DexType::UniswapV3).collect();
+    let v3_pools: Vec<_> = registry.iter().filter(|p| p.dex_type == mev_scout_core::pool::dex_type::DexType::UniswapV3).collect();
 
     if v3_pools.is_empty() {
         eprintln!("Skipping: no V3 pool found in registry");
@@ -771,9 +771,9 @@ async fn test_real_v3_mint_swap_burn_detection() {
 /// ── JitArb Detection Tests ──────────────────────────────────────────────────
 #[test]
 fn test_jit_arb_detection_synthetic() {
-    use mev_backtest_core::mev::jit_arb::JitArbDetector;
-    use mev_backtest_core::pool::decoders::{V3_SWAP_TOPIC, V3_MINT_TOPIC};
-    use mev_backtest_core::data::ExecutedLog;
+    use mev_scout_core::mev::jit_arb::JitArbDetector;
+    use mev_scout_core::pool::decoders::{V3_SWAP_TOPIC, V3_MINT_TOPIC};
+    use mev_scout_core::data::ExecutedLog;
     use alloy::primitives::{address, Address, Bytes, B256};
 
     let pool_p = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
@@ -800,24 +800,24 @@ fn test_jit_arb_detection_synthetic() {
         ExecutedLog { address: pool, topics: vec![V3_SWAP_TOPIC, B256::ZERO, B256::ZERO], data: Bytes::from_static(&[0u8; 160]) }
     }
 
-    let mut pm = mev_backtest_core::pool::state::PoolManager::new();
-    pm.add_pool(mev_backtest_core::pool::state::PoolState::UniswapV2(
-        mev_backtest_core::pool::state::UniswapV2PoolState {
-            info: mev_backtest_core::pool::state::PoolInfo {
+    let mut pm = mev_scout_core::pool::state::PoolManager::new();
+    pm.add_pool(mev_scout_core::pool::state::PoolState::UniswapV2(
+        mev_scout_core::pool::state::UniswapV2PoolState {
+            info: mev_scout_core::pool::state::PoolInfo {
                 address: pool_p, token0: wmatic, token1: usdc, fee: 30, name: None,
-                dex_type: mev_backtest_core::pool::dex_type::DexType::UniswapV2, tick_spacing: None,
+                dex_type: mev_scout_core::pool::dex_type::DexType::UniswapV2, tick_spacing: None,
             },
             reserve0: 1_000_000, reserve1: 1_000_000,
         },
     ));
-    pm.add_pool(mev_backtest_core::pool::state::PoolState::UniswapV2(
-        mev_backtest_core::pool::state::UniswapV2PoolState {
-            info: mev_backtest_core::pool::state::PoolInfo {
+    pm.add_pool(mev_scout_core::pool::state::PoolState::UniswapV2(
+        mev_scout_core::pool::state::UniswapV2PoolState {
+            info: mev_scout_core::pool::state::PoolInfo {
                 address: pool_q,
                 token0: usdc,
                 token1: address!("c2132d05d31c914a87c6611c10748aeb04b58e8f"),
                 fee: 30, name: None,
-                dex_type: mev_backtest_core::pool::dex_type::DexType::UniswapV2, tick_spacing: None,
+                dex_type: mev_scout_core::pool::dex_type::DexType::UniswapV2, tick_spacing: None,
             },
             reserve0: 1_000_000, reserve1: 1_000_000,
         },
@@ -832,7 +832,7 @@ fn test_jit_arb_detection_synthetic() {
 
     let opps = detector.detect(12345, &pm);
     assert_eq!(opps.len(), 1, "Should detect JitArb");
-    assert_eq!(opps[0].strategy, mev_backtest_core::types::Strategy::JitArb);
+    assert_eq!(opps[0].strategy, mev_scout_core::types::Strategy::JitArb);
     assert_eq!(opps[0].pool_a, pool_p);
     assert_eq!(opps[0].pool_b, pool_q);
     assert_eq!(opps[0].liquidity_amount, Some(500_000));
@@ -848,7 +848,7 @@ async fn test_real_v2_v3_cross_dex_polygon() {
         None => { eprintln!("Skipping: RPC_URL not set"); return; }
     };
 
-    let rpc = match mev_backtest_core::rpc::RpcClient::new(&rpc_url, 137) {
+    let rpc = match mev_scout_core::rpc::RpcClient::new(&rpc_url, 137) {
         Ok(r) => r,
         Err(e) => { eprintln!("Skipping: failed to create RPC client: {e}"); return; }
     };
@@ -866,20 +866,20 @@ async fn test_real_v2_v3_cross_dex_polygon() {
 
     // Construct a real V3 pool (not in registry, but exists on-chain)
     // Uniswap V3 WMATIC/USDC 0.05% pool on Polygon
-    let v3_info = mev_backtest_core::pool::state::PoolInfo {
+    let v3_info = mev_scout_core::pool::state::PoolInfo {
         address: address!("a374094527e1673a86de625aa59517c5de346d32"),
         token0: wmatic(),
         token1: usdc(),
         fee: 500,
         name: Some("Uniswap V3 WMATIC/USDC 0.05%".into()),
-        dex_type: mev_backtest_core::pool::dex_type::DexType::UniswapV3,
+        dex_type: mev_scout_core::pool::dex_type::DexType::UniswapV3,
         tick_spacing: Some(10),
     };
 
-    let mut pm = mev_backtest_core::pool::state::PoolManager::new();
+    let mut pm = mev_scout_core::pool::state::PoolManager::new();
     pm.add_pool(pool_info_to_state(v2.clone()));
-    pm.add_pool(mev_backtest_core::pool::state::PoolState::UniswapV3(
-        mev_backtest_core::pool::state::UniswapV3PoolState::new(v3_info),
+    pm.add_pool(mev_scout_core::pool::state::PoolState::UniswapV3(
+        mev_scout_core::pool::state::UniswapV3PoolState::new(v3_info),
     ));
 
     pm.init_from_rpc(&rpc, block_num).await;

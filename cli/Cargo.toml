@@ -1,14 +1,14 @@
 [package]
-name = "mev-backtest-cli"
+name = "mev-scout-cli"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "mev-backtest"
+name = "mev-scout"
 path = "src/main.rs"
 
 [dependencies]
-mev-backtest-core = { path = "../mev-backtest-core" }
+mev-scout-core = { path = "../core" }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"

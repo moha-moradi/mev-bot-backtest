@@ -38,8 +38,8 @@ cd mev-bot-backtest
 cargo build --release
 
 # The binary is at:
-#   ./target/release/mev-backtest.exe   (Windows)
-#   ./target/release/mev-backtest       (Linux/macOS)
+#   ./target/release/mev-scout.exe   (Windows)
+#   ./target/release/mev-scout       (Linux/macOS)
 ```
 
 Alternatively, run directly with cargo:
@@ -56,7 +56,7 @@ cargo run --release -- --help
 
 | Flag | Description |
 |------|-------------|
-| `-f, --config <FILE>` | Path to TOML config file (default: `./mev-backtest.toml`) |
+| `-f, --config <FILE>` | Path to TOML config file (default: `./mev-scout.toml`) |
 | `-v, --verbose` | Enable debug-level logging |
 | `--quiet` | Suppress all output except the final summary |
 | `--help` | Print help information |
@@ -67,7 +67,7 @@ cargo run --release -- --help
 #### `run` — Execute the full backtest
 
 ```bash
-mev-backtest run [OPTIONS]
+mev-scout run [OPTIONS]
 ```
 
 **Block range (exactly one required):**
@@ -118,19 +118,19 @@ mev-backtest run [OPTIONS]
 
 ```bash
 # Backtest the last 7 days on Polygon with default settings
-mev-backtest run --days 7
+mev-scout run --days 7
 
 # Backtest a specific block range on BSC with JSON output
-mev-backtest run --from-block 30000000 --to-block 30000100 -n bsc -r https://bsc.publicnode.com --output json
+mev-scout run --from-block 30000000 --to-block 30000100 -n bsc -r https://bsc.publicnode.com --output json
 
 # Single-block backtest with custom gas settings
-mev-backtest run --block 45000000 --gas-limit 300000 --priority-fee 2.0
+mev-scout run --block 45000000 --gas-limit 300000 --priority-fee 2.0
 ```
 
 #### `fetch` — Pre-cache block data without running strategies
 
 ```bash
-mev-backtest fetch [OPTIONS]
+mev-scout fetch [OPTIONS]
 ```
 
 Shares the same block range flags as `run` (`--days`, `--blocks`, `--block`, `--from-block/--to-block`) plus `--chain`, `--rpc`, and `--parallelism`.
@@ -139,13 +139,13 @@ Useful for warming the cache before running strategies, or for separating the da
 
 ```bash
 # Cache the last 1000 blocks on Polygon
-mev-backtest fetch --blocks 1000
+mev-scout fetch --blocks 1000
 ```
 
 #### `replay` — Debug a specific block
 
 ```bash
-mev-backtest replay --block <NUMBER> [OPTIONS]
+mev-scout replay --block <NUMBER> [OPTIONS]
 ```
 
 Replays a single cached block through revm, comparing execution results against the stored receipts. Reports a per-transaction match rate.
@@ -160,14 +160,14 @@ Replays a single cached block through revm, comparing execution results against 
 
 ```bash
 # Cache a block first, then replay it
-mev-backtest fetch --block 50000000
-mev-backtest replay --block 50000000
+mev-scout fetch --block 50000000
+mev-scout replay --block 50000000
 ```
 
 #### `config` — Print resolved configuration
 
 ```bash
-mev-backtest config
+mev-scout config
 ```
 
 Prints the full resolved configuration as TOML after merging config file and CLI overrides. Useful for debugging what settings are active.
@@ -175,7 +175,7 @@ Prints the full resolved configuration as TOML after merging config file and CLI
 #### `report` — Re-render tables from saved JSON
 
 ```bash
-mev-backtest report [OPTIONS]
+mev-scout report [OPTIONS]
 ```
 
 Re-renders saved results from a previous `run` execution. By default loads the latest results file from the export directory.
@@ -188,16 +188,16 @@ Re-renders saved results from a previous `run` execution. By default loads the l
 
 ```bash
 # Show the latest run results
-mev-backtest report
+mev-scout report
 
 # Show a specific run as CSV
-mev-backtest report --run-id run_1712345678 --output csv
+mev-scout report --run-id run_1712345678 --output csv
 ```
 
 #### `discover` — On-chain pool discovery
 
 ```bash
-mev-backtest discover [OPTIONS] --from-block <N> --to-block <N>
+mev-scout discover [OPTIONS] --from-block <N> --to-block <N>
 ```
 
 Scans factory contract events (`PairCreated` / `PoolCreated`) to discover liquidity pools directly from the chain.
@@ -216,10 +216,10 @@ Scans factory contract events (`PairCreated` / `PoolCreated`) to discover liquid
 
 ```bash
 # Discover V2 pools on Ethereum: QuickSwap factory, blocks 15M–16M
-mev-backtest discover -n ethereum --v2-factories "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f" --from-block 15000000 --to-block 16000000
+mev-scout discover -n ethereum --v2-factories "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f" --from-block 15000000 --to-block 16000000
 
 # Discover V2+V3 pools and save to cache
-mev-backtest discover -n polygon \
+mev-scout discover -n polygon \
   --v2-factories "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32,0x9e5A52f57b3038F1B8EeE45F28b3C1960e1fC6b" \
   --v3-factory "0x1F98431c8aD98523631AE4a59f267346ea31F984" \
   --from-block 50000000 --to-block 51000000 --save
@@ -231,12 +231,12 @@ mev-backtest discover -n polygon \
 
 ### Basic run on Polygon (last 100 blocks)
 ```bash
-mev-backtest run --blocks 100 --chain polygon
+mev-scout run --blocks 100 --chain polygon
 ```
 
 ### Run with custom gas settings
 ```bash
-mev-backtest run --block 50000000 \
+mev-scout run --block 50000000 \
   --gas-limit 300000 \
   --priority-fee 2.0 \
   --gas-model p90
@@ -244,35 +244,35 @@ mev-backtest run --block 50000000 \
 
 ### Run with specific strategies
 ```bash
-mev-backtest run --days 7 --strategies "two_hop_arb,multi_hop_arb"
+mev-scout run --days 7 --strategies "two_hop_arb,multi_hop_arb"
 ```
 
 ### Run multi-hop arbitrage only (Polygon archive node)
 ```bash
-mev-backtest run --blocks 1000 --chain polygon --strategies multi_hop_arb
+mev-scout run --blocks 1000 --chain polygon --strategies multi_hop_arb
 ```
 
 ### Fetch block data first, then run backtest
 ```bash
-mev-backtest fetch --days 30 --chain polygon
-mev-backtest run --days 30 --chain polygon
+mev-scout fetch --days 30 --chain polygon
+mev-scout run --days 30 --chain polygon
 ```
 
 ### Replay a specific block for debugging
 ```bash
-mev-backtest replay --block 50000000 --chain polygon
+mev-scout replay --block 50000000 --chain polygon
 ```
 
 ### Report from saved JSON results
 ```bash
-mev-backtest report
-mev-backtest report --output csv
-mev-backtest report --run-id run_1718000000
+mev-scout report
+mev-scout report --output csv
+mev-scout report --run-id run_1718000000
 ```
 
 ### Discover pools on a new chain
 ```bash
-mev-backtest discover \
+mev-scout discover \
   --chain polygon \
   --v2-factories 0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32 \
   --from-block 0 --to-block 50000000 \
@@ -280,7 +280,7 @@ mev-backtest discover \
 ```
 
 ### Full TOML configuration
-Create `mev-backtest.toml`:
+Create `mev-scout.toml`:
 ```toml
 chain = "polygon"
 rpc_url = "https://polygon-rpc.com"
@@ -304,7 +304,7 @@ The engine uses a three-layer configuration model:
 Defaults  ←  TOML config file  ←  CLI flags (highest precedence)
 ```
 
-### Config file (`mev-backtest.toml`)
+### Config file (`mev-scout.toml`)
 
 ```toml
 # Chain (default: "polygon")
@@ -368,7 +368,7 @@ Seven chains are preconfigured with chain IDs, contract addresses, factory addre
 ### Detailed execution walkthrough
 
 1. **CLI Parsing** — `clap` parses the command and flags into a typed struct.
-2. **Config Loading** — Reads `mev-backtest.toml` (or the path given by `-f`). Falls back to built-in defaults if the file doesn't exist.
+2. **Config Loading** — Reads `mev-scout.toml` (or the path given by `-f`). Falls back to built-in defaults if the file doesn't exist.
 3. **CLI Merge** — Every CLI flag overrides the corresponding config field.
 4. **Validation** — Validates chain name, resolves strategies, checks range conflicts (e.g., `--days` and `--block` cannot be used together), parses gas model, output format, etc.
 5. **Startup Plan** — Prints a summary table showing the resolved configuration before any work begins.
@@ -569,7 +569,7 @@ Two-tier pricing system:
 - Deduplicates against existing pools in the registry.
 - Configured via `uniswap_v2_factories`, `uniswap_v3_factory`, and `pool_discovery_start_block` in chain config.
 - Enable by setting `pool_discovery_start_block` in the chain config. On `run`, the engine scans from that block (or the last saved cursor) to `start_block - 1` before initializing pool reserves.
-- Standalone CLI command: `mev-backtest discover` for ad-hoc discovery with optional `--save` to cache.
+- Standalone CLI command: `mev-scout discover` for ad-hoc discovery with optional `--save` to cache.
 - Discovered pools persist in the sled cache and are loaded on subsequent runs alongside the registry JSON files.
 
 ### Multi-Chain Support
@@ -682,7 +682,7 @@ If `replay` shows a low receipt match rate (below 99%):
 2. Check that the correct chain is selected.
 3. The block range must be fully cached before replaying.
 
-### `mev-backtest.toml` not found
+### `mev-scout.toml` not found
 
 If the config file doesn't exist, the engine uses built-in defaults. This is not an error. Create the file only if you need custom overrides.
 

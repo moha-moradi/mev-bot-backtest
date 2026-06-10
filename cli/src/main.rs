@@ -6,19 +6,19 @@ use comfy_table::Table;
 use indicatif::{ProgressBar, ProgressStyle};
 use tracing_subscriber::EnvFilter;
 
-use mev_backtest_core::cache::{CacheStore, RunManifest};
-use mev_backtest_core::cli::{Cli, Command};
-use mev_backtest_core::config::{CliOverrides, Config};
-use mev_backtest_core::fetch::Fetcher;
+use mev_scout_core::cache::{CacheStore, RunManifest};
+use mev_scout_core::cli::{Cli, Command};
+use mev_scout_core::config::{CliOverrides, Config};
+use mev_scout_core::fetch::Fetcher;
 
-use mev_backtest_core::pool::state::PoolManager;
-use mev_backtest_core::replay::BlockReplayer;
-use mev_backtest_core::resolver::RangeResolver;
-use mev_backtest_core::rpc::RpcClient;
-use mev_backtest_core::mev::opportunity::ResultsFile;
-use mev_backtest_core::run::BacktestRunner;
-use mev_backtest_core::types::{GasConfig, OutputFormat};
-use mev_backtest_core::validation;
+use mev_scout_core::pool::state::PoolManager;
+use mev_scout_core::replay::BlockReplayer;
+use mev_scout_core::resolver::RangeResolver;
+use mev_scout_core::rpc::RpcClient;
+use mev_scout_core::mev::opportunity::ResultsFile;
+use mev_scout_core::run::BacktestRunner;
+use mev_scout_core::types::{GasConfig, OutputFormat};
+use mev_scout_core::validation;
 
 fn setup_logging(verbose: bool, quiet: bool) {
     let filter = if quiet {
@@ -149,7 +149,7 @@ fn build_overrides(cli: &Cli) -> CliOverrides {
     }
 }
 
-fn print_startup_plan(result: &validation::ValidationResult, config: &mev_backtest_core::config::Config) {
+fn print_startup_plan(result: &validation::ValidationResult, config: &mev_scout_core::config::Config) {
     let divider = "═".repeat(55);
 
     println!();
@@ -188,7 +188,7 @@ fn save_results_json(
     Ok(())
 }
 
-fn render_results_table(all_opportunities: &[mev_backtest_core::mev::opportunity::MevOpportunity]) {
+fn render_results_table(all_opportunities: &[mev_scout_core::mev::opportunity::MevOpportunity]) {
     let mut table = Table::new();
     table.set_header(vec![
         "Block", "Tx", "Strategy",
@@ -215,7 +215,7 @@ async fn main() -> anyhow::Result<()> {
     setup_logging(cli.verbose, cli.quiet);
 
     // Load config
-    let config_path = cli.config.as_deref().unwrap_or("mev-backtest.toml");
+    let config_path = cli.config.as_deref().unwrap_or("mev-scout.toml");
     let mut config = Config::load_or_default(config_path);
 
     // Merge CLI overrides
@@ -267,7 +267,7 @@ async fn main() -> anyhow::Result<()> {
                 }
                 let batch_size = validation_result.chain_config.pool_discovery_batch_size.unwrap_or(50_000);
                 if !v2_addrs.is_empty() || !v3_addrs.is_empty() {
-                    let discovered = mev_backtest_core::pool::discovery::discover_pools(
+                    let discovered = mev_scout_core::pool::discovery::discover_pools(
                         &rpc, &cache, &v2_addrs, &v3_addrs, start_block,
                         resolved.start_block.saturating_sub(1), batch_size,
                     ).await?;
@@ -563,7 +563,7 @@ async fn main() -> anyhow::Result<()> {
             // Verify block is cached
             if !cache.has_block(block_num)? {
                 eprintln!(
-                    "Error: Block {} is not cached. Run `mev-backtest fetch --block {}` first.",
+                    "Error: Block {} is not cached. Run `mev-scout fetch --block {}` first.",
                     block_num, block_num
                 );
                 std::process::exit(1);
@@ -639,8 +639,8 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Discover(args) => {
             use alloy::primitives::Address;
-            use mev_backtest_core::pool::discovery::{discover_v2_pools, discover_v3_pools};
-            use mev_backtest_core::types::ChainName;
+            use mev_scout_core::pool::discovery::{discover_v2_pools, discover_v3_pools};
+            use mev_scout_core::types::ChainName;
 
             let chain_name: ChainName = match args.chain_args.chain.parse() {
                 Ok(c) => c,
@@ -748,7 +748,7 @@ async fn main() -> anyhow::Result<()> {
             if args.save {
                 let cache = CacheStore::open(&args.cache_dir, chain_id)?;
                 for pool in &all_pools {
-                    let info: mev_backtest_core::pool::state::PoolInfo = pool.clone().into();
+                    let info: mev_scout_core::pool::state::PoolInfo = pool.clone().into();
                     let _ = cache.put_discovered_pool(&info);
                 }
                 // Save cursors

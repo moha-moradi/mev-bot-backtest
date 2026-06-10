@@ -11,8 +11,8 @@
 //! - Profit/loss classification (`profitable` / `below_threshold` / `reverted`)
 
 use alloy::primitives::Address;
-use mev_backtest_core::mev::opportunity::MevOpportunity;
-use mev_backtest_core::types::Strategy;
+use mev_scout_core::mev::opportunity::MevOpportunity;
+use mev_scout_core::types::Strategy;
 
 use crate::state::{SimulationTrace, TraceResult, TraceStep, UiOpportunity};
 
@@ -181,7 +181,7 @@ fn build_jitarb_trace(opp: &MevOpportunity, gross: f64, gas: f64, net: f64) -> S
 /// - `result` is `"profitable"` only when `net > MIN_PROFIT_THRESHOLD` (0.001 ETH)
 pub fn map_opportunity(
     opp: &MevOpportunity,
-    _pool_registry: &mev_backtest_core::pool::registry::PoolRegistry,
+    _pool_registry: &mev_scout_core::pool::registry::PoolRegistry,
     is_flash_loan: bool,
     block_hash: &str,
     usd_price: f64,
@@ -251,7 +251,7 @@ pub fn map_opportunities(
     opportunities: &[MevOpportunity],
     usd_price: f64,
 ) -> Vec<UiOpportunity> {
-    let registry = mev_backtest_core::pool::registry::PoolRegistry;
+    let registry = mev_scout_core::pool::registry::PoolRegistry;
     opportunities
         .iter()
         .map(|opp| {

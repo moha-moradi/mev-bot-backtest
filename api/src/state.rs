@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 
-use mev_backtest_core::config::Config;
+use mev_scout_core::config::Config;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SseEvent {
@@ -51,9 +51,9 @@ pub struct RunResult {
     pub range_mode: String,
     pub strategies: Vec<String>,
     pub opportunities: Vec<UiOpportunity>,
-    pub summary: Option<mev_backtest_core::aggregate::SummaryMetrics>,
-    pub by_strategy: Option<std::collections::HashMap<String, mev_backtest_core::aggregate::StrategyMetrics>>,
-    pub by_dex: Option<Vec<mev_backtest_core::aggregate::DexMetrics>>,
+    pub summary: Option<mev_scout_core::aggregate::SummaryMetrics>,
+    pub by_strategy: Option<std::collections::HashMap<String, mev_scout_core::aggregate::StrategyMetrics>>,
+    pub by_dex: Option<Vec<mev_scout_core::aggregate::DexMetrics>>,
     pub duration_ms: u64,
     pub created_at: u64,
 }

@@ -3,8 +3,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::extract::State;
 use axum::Json;
-use mev_backtest_core::config::Config;
-use mev_backtest_core::types::{RangeMode, Strategy};
+use mev_scout_core::config::Config;
+use mev_scout_core::types::{RangeMode, Strategy};
 use tokio::sync::RwLock;
 use tracing::info;
 
@@ -97,7 +97,7 @@ fn build_range_mode(window: &WindowConfig) -> Result<RangeMode, String> {
     }
 }
 
-fn chain_config_for(chain: &str) -> Option<mev_backtest_core::config::ChainConfig> {
+fn chain_config_for(chain: &str) -> Option<mev_scout_core::config::ChainConfig> {
     let config = Config::default();
     config.chains.get(chain).cloned()
 }

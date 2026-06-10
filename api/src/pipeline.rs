@@ -19,16 +19,16 @@ use alloy::primitives::Address;
 use tokio::sync::{broadcast, RwLock};
 use tracing::info;
 
-use mev_backtest_core::aggregate;
-use mev_backtest_core::cache::CacheStore;
-use mev_backtest_core::config::ChainConfig;
-use mev_backtest_core::fetch::Fetcher;
-use mev_backtest_core::pool::state::PoolManager;
-use mev_backtest_core::replay::BlockReplayer;
-use mev_backtest_core::resolver::RangeResolver;
-use mev_backtest_core::rpc::RpcClient;
-use mev_backtest_core::run::BacktestRunner;
-use mev_backtest_core::types::{ChainName, GasConfig, RangeMode, Strategy};
+use mev_scout_core::aggregate;
+use mev_scout_core::cache::CacheStore;
+use mev_scout_core::config::ChainConfig;
+use mev_scout_core::fetch::Fetcher;
+use mev_scout_core::pool::state::PoolManager;
+use mev_scout_core::replay::BlockReplayer;
+use mev_scout_core::resolver::RangeResolver;
+use mev_scout_core::rpc::RpcClient;
+use mev_scout_core::run::BacktestRunner;
+use mev_scout_core::types::{ChainName, GasConfig, RangeMode, Strategy};
 
 use crate::state::{
     LogEntry, RunResult, RunState, RunStatus, SseEvent, StageStatus,
@@ -225,7 +225,7 @@ pub async fn run_pipeline(
         Ok(m) => m,
         Err(_) => {
             pipeline_log(&run_state, &sse_tx, "GAS", &format!("Unknown gas model '{}', using historical_exact", params.gas_model)).await;
-            mev_backtest_core::types::GasModel::HistoricalExact
+            mev_scout_core::types::GasModel::HistoricalExact
         }
     };
 
@@ -363,7 +363,7 @@ pub async fn run_pipeline(
         .try_read()
         .ok()
         .and_then(|s| s.config.coingecko_api_key.clone());
-    let mut price_cache = mev_backtest_core::coingecko::PriceCache::new(api_key);
+    let mut price_cache = mev_scout_core::coingecko::PriceCache::new(api_key);
     let chain_name: ChainName = params.chain.parse().ok().unwrap_or(ChainName::Ethereum);
     let usd_price = price_cache.usd_price(chain_name).await.unwrap_or(0.0);
 
