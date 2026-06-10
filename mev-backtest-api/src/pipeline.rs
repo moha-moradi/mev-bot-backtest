@@ -15,6 +15,7 @@
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use alloy::primitives::Address;
 use tokio::sync::{broadcast, RwLock};
 use tracing::info;
 
@@ -193,6 +194,11 @@ pub async fn run_pipeline(
     });
 
     let mut pool_manager = PoolManager::new();
+    if let Some(wn) = &chain_config.wrapped_native_token {
+        if let Ok(addr) = wn.parse::<Address>() {
+            pool_manager = pool_manager.with_wrapped_native(addr);
+        }
+    }
     let prev_block = resolved.start_block.saturating_sub(1);
     let registry_path = chain_config.pools_registry_path.as_deref();
 
