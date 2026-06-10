@@ -5,9 +5,15 @@ use crate::pool::state::{PoolManager, PoolState};
 use crate::pool::v3_quote::quote_v3_exact_in;
 use crate::types::{GasConfig, Strategy};
 
+/// Detects multi-hop arbitrage opportunities across connected pool paths.
+///
+/// Stateful per block: enumerates pool graphs via BFS (depth ≤ 4) from existing
+/// arbitrage pairs, then quotes each path through V2/V3 AMMs. An opportunity
+/// is emitted only when output > input after gas.
 pub struct MultiHopArbDetector;
 
 impl MultiHopArbDetector {
+    /// Scan all pool paths and emit profitable multi-hop arbitrage opportunities.
     pub fn detect(
         pool_manager: &PoolManager,
         block_number: u64,
@@ -157,10 +163,7 @@ impl MultiHopArbDetector {
             return None;
         }
 
-        let gas_cost_wei = GasConfig {
-            gas_limit: gas_config.gas_limit.saturating_mul(path.len() as u64),
-            ..gas_config
-        }.compute_gas_cost(base_fee_per_gas);
+        let gas_cost_wei = gas_config.compute_gas_cost(Strategy::MultiHopArb, base_fee_per_gas);
 
         Some(MevOpportunity {
             block_number,

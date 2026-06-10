@@ -9,10 +9,13 @@ use crate::pool::v3_quote::quote_v3_exact_in;
 use crate::types::{GasConfig, Strategy};
 
 /// Detects two-hop arbitrage opportunities across V2, V3, and mixed pools.
+///
+/// Uses analytical closed-form solutions for V2 pairs and a step-by-step quote
+/// engine for V3 pools. Does not require block-by-block state accumulation.
 pub struct TwoHopArbDetector;
 
 impl TwoHopArbDetector {
-    /// Detect arbitrage opportunities across all pool pairs in the manager.
+    /// Check all arbitrage pool-pair directions and emit profitable two-hop opportunities.
     pub fn detect(
         pool_manager: &PoolManager,
         block_number: u64,
@@ -67,7 +70,7 @@ impl TwoHopArbDetector {
             return None;
         }
 
-        let gas_cost_wei = gas_config.compute_gas_cost(base_fee_per_gas);
+        let gas_cost_wei = gas_config.compute_gas_cost(Strategy::TwoHopArb, base_fee_per_gas);
 
         Some(MevOpportunity {
             block_number,
