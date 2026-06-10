@@ -1,5 +1,6 @@
 pub mod aggregate;
 pub mod cache;
+pub mod coingecko;
 pub mod cli;
 pub mod config;
 pub mod data;
