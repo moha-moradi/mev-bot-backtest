@@ -276,14 +276,26 @@ pub struct GasConfig {
 }
 
 impl GasConfig {
-    pub fn compute_gas_cost(&self, base_fee_per_gas: u128) -> u128 {
+    /// Strategy-specific default gas limits based on empirical observations.
+    pub fn gas_limit_for_strategy(&self, strategy: Strategy) -> u64 {
+        match strategy {
+            Strategy::TwoHopArb => 150_000,
+            Strategy::MultiHopArb => 300_000,
+            Strategy::Jit => 300_000,
+            Strategy::JitArb => 350_000,
+            Strategy::Sandwich => 200_000,
+        }
+    }
+
+    pub fn compute_gas_cost(&self, strategy: Strategy, base_fee_per_gas: u128) -> u128 {
+        let gas_limit = self.gas_limit_for_strategy(strategy);
         let pf_wei = (self.priority_fee_gwei * 1_000_000_000.0) as u128;
         let effective_price = match self.gas_model {
             GasModel::HistoricalExact => base_fee_per_gas.saturating_add(pf_wei),
             GasModel::Fixed => pf_wei,
             GasModel::P90 => base_fee_per_gas.saturating_mul(150).saturating_div(100).saturating_add(pf_wei),
         };
-        (self.gas_limit as u128).saturating_mul(effective_price)
+        (gas_limit as u128).saturating_mul(effective_price)
     }
 }
 
@@ -465,8 +477,8 @@ mod tests {
     #[test]
     fn test_gas_config_default_compute_historical_exact() {
         let cfg = GasConfig::default();
-        let cost = cfg.compute_gas_cost(50_000_000_000);
-        assert_eq!(cost, 200_000u128 * 50_000_000_000);
+        let cost = cfg.compute_gas_cost(Strategy::TwoHopArb, 50_000_000_000);
+        assert_eq!(cost, 150_000u128 * 50_000_000_000);
     }
 
     #[test]
@@ -475,9 +487,8 @@ mod tests {
             priority_fee_gwei: 2.0,
             ..GasConfig::default()
         };
-        // 200_000 * (50 + 2) = 200_000 * 52 = 10_400_000_000_000
-        let cost = cfg.compute_gas_cost(50_000_000_000u128);
-        assert_eq!(cost, 200_000u128 * 52_000_000_000u128);
+        let cost = cfg.compute_gas_cost(Strategy::TwoHopArb, 50_000_000_000u128);
+        assert_eq!(cost, 150_000u128 * 52_000_000_000u128);
     }
 
     #[test]
@@ -487,10 +498,8 @@ mod tests {
             priority_fee_gwei: 3.0,
             ..GasConfig::default()
         };
-        // Fixed: only priority fee (3 gwei = 3_000_000_000 wei)
-        // 200_000 * 3_000_000_000 = 600_000_000_000_000
-        let cost = cfg.compute_gas_cost(50_000_000_000u128);
-        assert_eq!(cost, 200_000u128 * 3_000_000_000u128);
+        let cost = cfg.compute_gas_cost(Strategy::TwoHopArb, 50_000_000_000u128);
+        assert_eq!(cost, 150_000u128 * 3_000_000_000u128);
     }
 
     #[test]
@@ -500,10 +509,18 @@ mod tests {
             priority_fee_gwei: 1.0,
             ..GasConfig::default()
         };
-        // P90: base_fee * 1.5 + priority_fee = 50 * 1.5 + 1 = 76 gwei
-        // 200_000 * 76_000_000_000 = 15_200_000_000_000_000
-        let cost = cfg.compute_gas_cost(50_000_000_000u128);
-        assert_eq!(cost, 200_000u128 * 76_000_000_000u128);
+        let cost = cfg.compute_gas_cost(Strategy::TwoHopArb, 50_000_000_000u128);
+        assert_eq!(cost, 150_000u128 * 76_000_000_000u128);
+    }
+
+    #[test]
+    fn test_gas_limit_per_strategy() {
+        let cfg = GasConfig::default();
+        assert_eq!(cfg.gas_limit_for_strategy(Strategy::TwoHopArb), 150_000);
+        assert_eq!(cfg.gas_limit_for_strategy(Strategy::MultiHopArb), 300_000);
+        assert_eq!(cfg.gas_limit_for_strategy(Strategy::Jit), 300_000);
+        assert_eq!(cfg.gas_limit_for_strategy(Strategy::JitArb), 350_000);
+        assert_eq!(cfg.gas_limit_for_strategy(Strategy::Sandwich), 200_000);
     }
 }
 
