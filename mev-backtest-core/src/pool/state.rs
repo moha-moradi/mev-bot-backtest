@@ -194,6 +194,8 @@ pub struct PoolManager {
     token_index: HashMap<Address, Vec<Address>>,
     /// Cached arbitrage pairs (invalidated on add_pool)
     pairs_cache: RefCell<Option<Vec<(Address, Address, Address)>>>,
+    /// Address of the wrapped native token (WMATIC/WETH/WBNB) per chain.
+    wrapped_native: Option<Address>,
 }
 
 impl PoolManager {
@@ -206,6 +208,7 @@ impl PoolManager {
             pools: HashMap::new(),
             token_index: HashMap::new(),
             pairs_cache: RefCell::new(None),
+            wrapped_native: None,
         }
     }
 
@@ -215,6 +218,7 @@ impl PoolManager {
             pools: HashMap::with_capacity(capacity),
             token_index: HashMap::with_capacity(capacity),
             pairs_cache: RefCell::new(None),
+            wrapped_native: None,
         }
     }
 
@@ -724,6 +728,25 @@ impl PoolManager {
                 }
             }
         }
+    }
+
+    /// Check if the given address is the wrapped native token (e.g., WMATIC, WETH).
+    pub fn is_wrapped_native(&self, token: &Address) -> bool {
+        self.wrapped_native.as_ref().map_or(false, |wn| token == wn)
+    }
+
+    /// Get V2 pool state by address (returns None if not a V2 pool or not found).
+    pub fn get_v2_state(&self, address: &Address) -> Option<&UniswapV2PoolState> {
+        match self.pools.get(address) {
+            Some(PoolState::UniswapV2(state)) => Some(state),
+            _ => None,
+        }
+    }
+
+    /// Set the wrapped native token address.
+    pub fn with_wrapped_native(mut self, addr: Address) -> Self {
+        self.wrapped_native = Some(addr);
+        self
     }
 }
 

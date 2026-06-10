@@ -23,10 +23,13 @@ struct SwapRecord {
     pool: Address,
     direction: SwapDirection,
     amount_in: u128,
-    #[allow(dead_code)]
     amount_out: u128,
 }
 
+/// Detects sandwich attacks on Uniswap V2 pools.
+///
+/// Pattern: [front_run_buy, victim_swap, backrun_sell] by the same sender.
+/// Call `process_tx()` for each tx, then `detect()` once per block.
 pub struct SandwichDetector {
     swap_records: Vec<SwapRecord>,
     emitted: Vec<(Address, usize)>,
@@ -42,6 +45,8 @@ impl SandwichDetector {
         }
     }
 
+    /// Process a single transaction's V2 swap logs.
+    /// Call BEFORE `detect()` for each tx in block order.
     pub fn process_tx(
         &mut self,
         tx_index: usize,
@@ -83,6 +88,8 @@ impl SandwichDetector {
         }
     }
 
+    /// Detect sandwich patterns from accumulated swap records.
+    /// Call AFTER `process_tx()` for all txs in the block.
     pub fn detect(
         &mut self,
         timestamp: u64,
@@ -128,6 +135,44 @@ impl SandwichDetector {
                     None => (Address::ZERO, Address::ZERO),
                 };
 
+                // Compute sandwich profit from frontrun/backrun amounts
+                let profit_wei = {
+                    if back.amount_out <= front.amount_in {
+                        U256::ZERO
+                    } else {
+                        let profit_raw = (back.amount_out - front.amount_in) as u128;
+                        let profit_token = match front.direction {
+                            SwapDirection::Token0ForToken1 => token_in,
+                            SwapDirection::Token1ForToken0 => token_out,
+                        };
+                        if pool_manager.is_wrapped_native(&profit_token) {
+                            U256::from(profit_raw)
+                        } else {
+                            let native_token = match front.direction {
+                                SwapDirection::Token0ForToken1 => token_out,
+                                SwapDirection::Token1ForToken0 => token_in,
+                            };
+                            if pool_manager.is_wrapped_native(&native_token) {
+                                if let Some(state) = pool_manager.get_v2_state(&front.pool) {
+                                    let (reserve_sell, reserve_buy) = match front.direction {
+                                        SwapDirection::Token0ForToken1 => (state.reserve0, state.reserve1),
+                                        SwapDirection::Token1ForToken0 => (state.reserve1, state.reserve0),
+                                    };
+                                    if reserve_sell > 0 {
+                                        U256::from(profit_raw.saturating_mul(reserve_buy).saturating_div(reserve_sell))
+                                    } else {
+                                        U256::ZERO
+                                    }
+                                } else {
+                                    U256::ZERO
+                                }
+                            } else {
+                                U256::ZERO
+                            }
+                        }
+                    }
+                };
+
                 opportunities.push(MevOpportunity {
                     block_number: self.block_number,
                     tx_index: front.tx_index,
@@ -137,7 +182,7 @@ impl SandwichDetector {
                     token_in,
                     token_out,
                     input_amount: U256::from(front.amount_in),
-                    expected_profit: U256::ZERO,
+                    expected_profit: profit_wei,
                     gas_cost_wei: 0,
                     timestamp,
                     path: None,
