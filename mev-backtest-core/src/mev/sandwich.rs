@@ -88,6 +88,46 @@ impl SandwichDetector {
         }
     }
 
+    /// Compute profit from a matched frontrun/backrun pair.
+    /// Returns profit in wrapped native token wei, or U256::ZERO if unconvertible.
+    fn compute_sandwich_profit(
+        &self,
+        front: &SwapRecord,
+        back: &SwapRecord,
+        token_in: Address,
+        token_out: Address,
+        pool_manager: &PoolManager,
+    ) -> U256 {
+        if back.amount_out <= front.amount_in {
+            return U256::ZERO;
+        }
+        let profit_raw = back.amount_out - front.amount_in;
+        let profit_token = match front.direction {
+            SwapDirection::Token0ForToken1 => token_in,
+            SwapDirection::Token1ForToken0 => token_out,
+        };
+        if pool_manager.is_wrapped_native(&profit_token) {
+            return U256::from(profit_raw);
+        }
+        // Try converting from profit token to the other token (which may be wrapped native)
+        let native_token = match front.direction {
+            SwapDirection::Token0ForToken1 => token_out,
+            SwapDirection::Token1ForToken0 => token_in,
+        };
+        if pool_manager.is_wrapped_native(&native_token) {
+            if let Some(state) = pool_manager.get_v2_state(&front.pool) {
+                let (reserve_sell, reserve_buy) = match front.direction {
+                    SwapDirection::Token0ForToken1 => (state.reserve0, state.reserve1),
+                    SwapDirection::Token1ForToken0 => (state.reserve1, state.reserve0),
+                };
+                if reserve_sell > 0 {
+                    return U256::from(profit_raw.saturating_mul(reserve_buy).saturating_div(reserve_sell));
+                }
+            }
+        }
+        U256::ZERO
+    }
+
     /// Detect sandwich patterns from accumulated swap records.
     /// Call AFTER `process_tx()` for all txs in the block.
     pub fn detect(
@@ -135,43 +175,7 @@ impl SandwichDetector {
                     None => (Address::ZERO, Address::ZERO),
                 };
 
-                // Compute sandwich profit from frontrun/backrun amounts
-                let profit_wei = {
-                    if back.amount_out <= front.amount_in {
-                        U256::ZERO
-                    } else {
-                        let profit_raw = (back.amount_out - front.amount_in) as u128;
-                        let profit_token = match front.direction {
-                            SwapDirection::Token0ForToken1 => token_in,
-                            SwapDirection::Token1ForToken0 => token_out,
-                        };
-                        if pool_manager.is_wrapped_native(&profit_token) {
-                            U256::from(profit_raw)
-                        } else {
-                            let native_token = match front.direction {
-                                SwapDirection::Token0ForToken1 => token_out,
-                                SwapDirection::Token1ForToken0 => token_in,
-                            };
-                            if pool_manager.is_wrapped_native(&native_token) {
-                                if let Some(state) = pool_manager.get_v2_state(&front.pool) {
-                                    let (reserve_sell, reserve_buy) = match front.direction {
-                                        SwapDirection::Token0ForToken1 => (state.reserve0, state.reserve1),
-                                        SwapDirection::Token1ForToken0 => (state.reserve1, state.reserve0),
-                                    };
-                                    if reserve_sell > 0 {
-                                        U256::from(profit_raw.saturating_mul(reserve_buy).saturating_div(reserve_sell))
-                                    } else {
-                                        U256::ZERO
-                                    }
-                                } else {
-                                    U256::ZERO
-                                }
-                            } else {
-                                U256::ZERO
-                            }
-                        }
-                    }
-                };
+                let profit_wei = self.compute_sandwich_profit(front, back, token_in, token_out, pool_manager);
 
                 opportunities.push(MevOpportunity {
                     block_number: self.block_number,
@@ -371,5 +375,25 @@ mod tests {
 
         let opps = detector.detect(100, &pm);
         assert!(opps.is_empty());
+    }
+
+    #[test]
+    fn test_sandwich_profit_computed() {
+        let mut detector = SandwichDetector::new(1);
+        let wmatic = address!("0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270");
+        let usdc = address!("3333333333333333333333333333333333333333");
+        let pool_addr = pool_a();
+        let pm = make_pm_with_pool(pool_addr, wmatic, usdc).with_wrapped_native(wmatic);
+
+        // frontrun: buy WMATIC (pay USDC, receive WMATIC) = Token1ForToken0
+        detector.process_tx(0, &[v2_swap_log(pool_addr, 0, 100, 95, 0)], Some(alice()));
+        // victim: same direction as frontrun
+        detector.process_tx(1, &[v2_swap_log(pool_addr, 0, 200, 180, 0)], Some(bob()));
+        // backrun: sell WMATIC (pay WMATIC, receive USDC) = Token0ForToken1 (opposite dir)
+        detector.process_tx(2, &[v2_swap_log(pool_addr, 82, 0, 0, 108)], Some(alice()));
+
+        let opps = detector.detect(100, &pm);
+        assert_eq!(opps.len(), 1);
+        assert!(opps[0].expected_profit > U256::ZERO);
     }
 }

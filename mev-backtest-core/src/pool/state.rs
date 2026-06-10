@@ -1232,4 +1232,27 @@ mod tests {
         let (_sqrt, tick, _liq) = PoolManager::decode_v3_state_from_storage(slot0, U256::ZERO);
         assert_eq!(tick, 8388607);
     }
+
+    // ---- PoolManager helper methods ----
+
+    #[test]
+    fn test_is_wrapped_native() {
+        let wmatic = address!("0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270");
+        let pm = PoolManager::new().with_wrapped_native(wmatic);
+        assert!(pm.is_wrapped_native(&wmatic));
+        assert!(!pm.is_wrapped_native(&Address::ZERO));
+    }
+
+    #[test]
+    fn test_get_v2_state_returns_none_for_missing() {
+        let pm = PoolManager::new();
+        assert!(pm.get_v2_state(&Address::ZERO).is_none());
+    }
+
+    #[test]
+    fn test_with_wrapped_native_sets_field() {
+        let weth = address!("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
+        let pm = PoolManager::new().with_wrapped_native(weth);
+        assert_eq!(pm.wrapped_native, Some(weth));
+    }
 }
