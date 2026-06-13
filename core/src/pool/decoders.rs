@@ -1,3 +1,5 @@
+//! Event log decoders for Uniswap V2/V3, Curve, and Balancer pool interactions.
+
 use alloy::primitives::{b256, keccak256, Address, B256, U256};
 
 use crate::data::ExecutedLog;

@@ -1,3 +1,5 @@
+//! Crate root: re-exports all public modules for the `mev-scout` core library.
+
 pub mod aggregate;
 pub mod cache;
 pub mod coingecko;

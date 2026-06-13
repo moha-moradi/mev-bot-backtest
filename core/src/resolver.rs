@@ -1,3 +1,5 @@
+//! Block range resolution — converts user-facing range modes (days, blocks, single, range) into concrete block numbers.
+
 use chrono::{DateTime, Utc};
 
 use crate::rpc::RpcClient;

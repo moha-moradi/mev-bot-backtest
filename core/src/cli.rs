@@ -1,3 +1,5 @@
+//! CLI argument parsing via clap, defining the command-line interface for mev-scout.
+
 use clap::{Args, Parser, Subcommand};
 
 /// MEV Scout — MEV opportunity scanner & backtester for EVM-compatible chains.

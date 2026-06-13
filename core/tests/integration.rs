@@ -1,8 +1,7 @@
 use alloy::primitives::{address, b256, Address, B256, U256};
 use mev_scout_core::mev::two_hop::TwoHopArbDetector;
 use mev_scout_core::pool::dex_type::DexType;
-use mev_scout_core::pool::state::UniswapV2PoolState;
-use mev_scout_core::pool::state::{PoolInfo, PoolManager, PoolState};
+use mev_scout_core::pool::state::{PoolInfo, PoolManager, PoolState, UniswapV2PoolState, UniswapV3PoolState};
 use mev_scout_core::mev::jit::JitDetector;
 use mev_scout_core::mev::sandwich::SandwichDetector;
 use mev_scout_core::types::{GasConfig, Strategy};
@@ -37,13 +36,6 @@ fn pool_info_to_state(info: PoolInfo) -> PoolState {
     }
 }
 
-fn load_polygon_registry() -> Vec<PoolInfo> {
-    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let pool_path = manifest.parent().unwrap().join("pools/polygon.json");
-    let path_str = pool_path.to_str().unwrap();
-    mev_scout_core::pool::registry::PoolRegistry::load(path_str).unwrap()
-}
-
 fn wmatic() -> Address {
     address!("0d500b1d8e8ef31e21c99d1db9a6444d3adf1270")
 }
@@ -58,6 +50,18 @@ fn matic_usdc_pool() -> Address {
 }
 fn matic_usdt_pool() -> Address {
     address!("604029b0c1a79eebfb31f7c5316434484f3a4b55")
+}
+
+fn pool_info(addr: Address, token0: Address, token1: Address, name: &str) -> PoolInfo {
+    PoolInfo {
+        address: addr,
+        token0,
+        token1,
+        fee: 30,
+        name: Some(name.into()),
+        dex_type: DexType::UniswapV2,
+        tick_spacing: None,
+    }
 }
 
 fn default_gas_config() -> GasConfig {
@@ -78,16 +82,6 @@ fn make_pool(addr: Address, token0: Address, token1: Address, r0: u128, r1: u128
         reserve0: r0,
         reserve1: r1,
     })
-}
-
-#[test]
-fn test_pool_registry_loads() {
-    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let pool_path = manifest.parent().unwrap().join("pools/polygon.json");
-    let path_str = pool_path.to_str().unwrap();
-    let pools = mev_scout_core::pool::registry::PoolRegistry::load_optional(Some(path_str));
-    assert!(!pools.is_empty(), "Pool registry should load pools from {}", path_str);
-    assert!(pools.len() >= 45, "Should have at least 45 pools, got {}. Path: {}", pools.len(), path_str);
 }
 
 #[test]
@@ -449,7 +443,7 @@ fn test_sandwich_detection_synthetic() {
 }
 
 /// ── Real-Data Tests (async / RPC) ──────────────────────────────────────────
-/// These tests load real pool configs from the registry and optionally fetch
+/// These tests load real pool configs and optionally fetch
 /// on-chain state via RPC.  They skip gracefully when no RPC is available,
 /// following the same pattern as e2e_discovery.
 
@@ -470,21 +464,19 @@ async fn test_real_state_initialization_and_two_hop() {
         Err(e) => { eprintln!("Skipping: failed to get block number: {e}"); return; }
     };
 
-    // Load two real Polygon pools that share the same pair (different DEX → arb)
-    let all = load_polygon_registry();
-
-    // QuickSwap WMATIC/USDC  (0x6e7a5f...)
-    let qs = all.iter()
-        .find(|p| p.address == address!("6e7a5fafcec6bb1e78bae2a1f0b612012bf14827"))
-        .expect("QuickSwap WMATIC/USDC missing from registry");
-    // SushiSwap WMATIC/USDC (0xcd353f...)
-    let ss = all.iter()
-        .find(|p| p.address == address!("cd353f79d9fade311fc3119b841e1f456b54e858"))
-        .expect("SushiSwap WMATIC/USDC missing from registry");
+    // Two real Polygon pools that share the same pair (different DEX → arb)
+    let qs = pool_info(
+        address!("6e7a5fafcec6bb1e78bae2a1f0b612012bf14827"),
+        wmatic(), usdc(), "QuickSwap WMATIC/USDC",
+    );
+    let ss = pool_info(
+        address!("cd353f79d9fade311fc3119b841e1f456b54e858"),
+        wmatic(), usdc(), "SushiSwap WMATIC/USDC",
+    );
 
     let mut pm = PoolManager::new();
-    pm.add_pool(pool_info_to_state(qs.clone()));
-    pm.add_pool(pool_info_to_state(ss.clone()));
+    pm.add_pool(pool_info_to_state(qs));
+    pm.add_pool(pool_info_to_state(ss));
 
     pm.init_from_rpc(&rpc, block_num).await;
 
@@ -528,24 +520,25 @@ async fn test_real_multi_hop_detection() {
         Err(e) => { eprintln!("Skipping: failed to get block number: {e}"); return; }
     };
 
-    let all = load_polygon_registry();
-
     // Build a pool set that supports multi-hop paths:
     //   QuickSwap WMATIC/USDC, WMATIC/USDT, USDC/USDT
-    let qs_wmatic_usdc = all.iter()
-        .find(|p| p.address == address!("6e7a5fafcec6bb1e78bae2a1f0b612012bf14827"))
-        .expect("QuickSwap WMATIC/USDC");
-    let qs_wmatic_usdt = all.iter()
-        .find(|p| p.address == address!("604029b0c1a79eebfb31f7c5316434484f3a4b55"))
-        .expect("QuickSwap WMATIC/USDT");
-    let qs_usdc_usdt = all.iter()
-        .find(|p| p.address == address!("2cf7252e74036d1da831d11089d326296e64a910"))
-        .expect("QuickSwap USDC/USDT");
+    let qs_wmatic_usdc = pool_info(
+        address!("6e7a5fafcec6bb1e78bae2a1f0b612012bf14827"),
+        wmatic(), usdc(), "QuickSwap WMATIC/USDC",
+    );
+    let qs_wmatic_usdt = pool_info(
+        address!("604029b0c1a79eebfb31f7c5316434484f3a4b55"),
+        wmatic(), usdt(), "QuickSwap WMATIC/USDT",
+    );
+    let qs_usdc_usdt = pool_info(
+        address!("2cf7252e74036d1da831d11089d326296e64a910"),
+        usdc(), usdt(), "QuickSwap USDC/USDT",
+    );
 
     let mut pm = PoolManager::new();
-    pm.add_pool(pool_info_to_state(qs_wmatic_usdc.clone()));
-    pm.add_pool(pool_info_to_state(qs_wmatic_usdt.clone()));
-    pm.add_pool(pool_info_to_state(qs_usdc_usdt.clone()));
+    pm.add_pool(pool_info_to_state(qs_wmatic_usdc));
+    pm.add_pool(pool_info_to_state(qs_wmatic_usdt));
+    pm.add_pool(pool_info_to_state(qs_usdc_usdt));
 
     pm.init_from_rpc(&rpc, block_num).await;
 
@@ -596,26 +589,22 @@ async fn test_real_detection_all_sushi_wmatic_pools() {
     };
 
     // All SushiSwap WMATIC pools share WMATIC → dense arbitrage graph
-    let sushipool_names = [
-        "SushiSwap WMATIC/USDC",
-        "SushiSwap WMATIC/USDT",
-        "SushiSwap WMATIC/DAI",
-        "SushiSwap WMATIC/WETH",
-        "SushiSwap WMATIC/WBTC",
-        "SushiSwap WMATIC/stMATIC",
+    let sushipools = [
+        pool_info(address!("cd353f79d9fade311fc3119b841e1f456b54e858"), wmatic(), usdc(), "SushiSwap WMATIC/USDC"),
+        pool_info(address!("55ff76bffc3cdd9d5fdbbc2ece4528ecce45047e"), wmatic(), usdt(), "SushiSwap WMATIC/USDT"),
+        pool_info(address!("8929d3fea77398f64448c85015633c2d6472fb29"), wmatic(), address!("8f3cf7ad23cd3cadbd9735aff958023239c6a063"), "SushiSwap WMATIC/DAI"),
+        pool_info(address!("c4e595acdd7d12fec385e5da5d43160e8a0bac0e"), wmatic(), address!("7ceb23fd6bc0add59e62ac25578270cff1b9f619"), "SushiSwap WMATIC/WETH"),
+        pool_info(address!("8531c4e29491fe6e5e87af6054fc20fccf0b4290"), wmatic(), address!("1bfd67037b42cf73acf2047067bd4f2c47d9bfd6"), "SushiSwap WMATIC/WBTC"),
+        pool_info(address!("27a2e38b0b7e0f526b6b57a7672d6aa3645cdb48"), wmatic(), address!("3a58a54c066fdc0f2d55fc9c89f0415c92ebf3c4"), "SushiSwap WMATIC/stMATIC"),
     ];
 
-    let all = load_polygon_registry();
     let mut pm = PoolManager::new();
-
-    for name in &sushipool_names {
-        if let Some(info) = all.iter().find(|p| p.name.as_deref() == Some(name)) {
-            pm.add_pool(pool_info_to_state(info.clone()));
-        }
+    for info in &sushipools {
+        pm.add_pool(pool_info_to_state(info.clone()));
     }
 
     let count = pm.pool_count();
-    assert_eq!(count, sushipool_names.len(), "Should find all SushiSwap WMATIC pools, got {count}");
+    assert_eq!(count, 6, "Should find all SushiSwap WMATIC pools, got {count}");
 
     pm.init_from_rpc(&rpc, block_num).await;
 
@@ -732,16 +721,16 @@ async fn test_real_v3_mint_swap_burn_detection() {
         Err(e) => { eprintln!("Skipping: failed to get block number: {e}"); return; }
     };
 
-    // Load a real V3 pool (e.g., QuickSwap USDC/WMATIC V3)
-    let registry = load_polygon_registry();
-    let v3_pools: Vec<_> = registry.iter().filter(|p| p.dex_type == mev_scout_core::pool::dex_type::DexType::UniswapV3).collect();
-
-    if v3_pools.is_empty() {
-        eprintln!("Skipping: no V3 pool found in registry");
-        return;
-    }
-
-    let pool_info = v3_pools[0].clone();
+    // Real V3 pool: Uniswap V3 WMATIC/USDC 0.05%
+    let pool_info = PoolInfo {
+        address: address!("a374094527e1673a86de625aa59517c5de346d32"),
+        token0: wmatic(),
+        token1: usdc(),
+        fee: 500,
+        name: Some("Uniswap V3 WMATIC/USDC 0.05%".into()),
+        dex_type: DexType::UniswapV3,
+        tick_spacing: Some(10),
+    };
     let mut pm = PoolManager::new();
     pm.add_pool(pool_info_to_state(pool_info.clone()));
     pm.init_from_rpc(&rpc, block_num).await;
@@ -858,29 +847,26 @@ async fn test_real_v2_v3_cross_dex_polygon() {
         Err(e) => { eprintln!("Skipping: failed to get block number: {e}"); return; }
     };
 
-    // Load a real V2 pool from the Polygon registry
-    let all = load_polygon_registry();
-    let v2 = all.iter()
-        .find(|p| p.address == address!("6e7a5fafcec6bb1e78bae2a1f0b612012bf14827"))
-        .expect("QuickSwap WMATIC/USDC V2 missing from registry");
+    // Real V2 pool: QuickSwap WMATIC/USDC
+    let v2 = pool_info(
+        address!("6e7a5fafcec6bb1e78bae2a1f0b612012bf14827"),
+        wmatic(), usdc(), "QuickSwap WMATIC/USDC",
+    );
 
-    // Construct a real V3 pool (not in registry, but exists on-chain)
-    // Uniswap V3 WMATIC/USDC 0.05% pool on Polygon
-    let v3_info = mev_scout_core::pool::state::PoolInfo {
+    // Real V3 pool: Uniswap V3 WMATIC/USDC 0.05%
+    let v3_info = PoolInfo {
         address: address!("a374094527e1673a86de625aa59517c5de346d32"),
         token0: wmatic(),
         token1: usdc(),
         fee: 500,
         name: Some("Uniswap V3 WMATIC/USDC 0.05%".into()),
-        dex_type: mev_scout_core::pool::dex_type::DexType::UniswapV3,
+        dex_type: DexType::UniswapV3,
         tick_spacing: Some(10),
     };
 
-    let mut pm = mev_scout_core::pool::state::PoolManager::new();
-    pm.add_pool(pool_info_to_state(v2.clone()));
-    pm.add_pool(mev_scout_core::pool::state::PoolState::UniswapV3(
-        mev_scout_core::pool::state::UniswapV3PoolState::new(v3_info),
-    ));
+    let mut pm = PoolManager::new();
+    pm.add_pool(pool_info_to_state(v2));
+    pm.add_pool(PoolState::UniswapV3(UniswapV3PoolState::new(v3_info)));
 
     pm.init_from_rpc(&rpc, block_num).await;
 

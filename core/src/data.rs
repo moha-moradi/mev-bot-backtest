@@ -1,9 +1,10 @@
-/// Wire-format data types returned by the JSON-RPC client and used internally.
-///
-/// These structs map directly to raw Ethereum JSON-RPC response fields and are
-/// intentionally kept close to the underlying RPC schema so conversions remain
-/// obvious. Internal extended types (`ExecutedTx`, `ExecutedLog`) carry fields
-/// populated by the block replayer that do not appear on the wire.
+//! Wire-format data types mapping raw Ethereum JSON-RPC responses to Rust structs.
+//!
+//! These structs map directly to raw Ethereum JSON-RPC response fields and are
+//! intentionally kept close to the underlying RPC schema so conversions remain
+//! obvious. Internal extended types (`ExecutedTx`, `ExecutedLog`) carry fields
+//! populated by the block replayer that do not appear on the wire.
+
 use alloy::primitives::{Address, B256, Bytes, U256};
 use serde::{Deserialize, Serialize};
 

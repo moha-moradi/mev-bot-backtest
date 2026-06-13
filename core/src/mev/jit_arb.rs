@@ -1,3 +1,5 @@
+//! JIT arbitrage detection — identifies arbitrage trades that sandwich a JIT liquidity event.
+
 use std::collections::HashMap;
 use alloy::primitives::{Address, U256};
 use crate::data::ExecutedLog;

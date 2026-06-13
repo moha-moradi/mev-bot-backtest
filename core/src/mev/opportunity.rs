@@ -1,7 +1,8 @@
-/// Data contract for detected MEV opportunities and persisted results files.
-///
-/// These types are the serialization boundary between the core backtest engine,
-/// the CLI output layer, and the API serialization layer.
+//! Data contracts for detected MEV opportunities and persisted result files.
+//!
+//! These types are the serialization boundary between the core backtest engine,
+//! the CLI output layer, and the API serialization layer.
+
 use alloy::primitives::{Address, U256};
 use serde::{Deserialize, Serialize};
 use crate::types::Strategy;

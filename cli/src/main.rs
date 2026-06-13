@@ -307,11 +307,9 @@ async fn main() -> anyhow::Result<()> {
             // Init pool manager (needs cache before it's moved into replayer)
             let mut pool_manager = PoolManager::new();
             let prev_block = resolved.start_block.saturating_sub(1);
-            let registry_path = validation_result.chain_config.pools_registry_path.as_deref();
             if !validation_result.strategies.is_empty() {
                 BacktestRunner::init_pools(
                     &mut pool_manager,
-                    registry_path,
                     &rpc,
                     prev_block,
                     Some(&cache),

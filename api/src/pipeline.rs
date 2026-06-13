@@ -200,12 +200,10 @@ pub async fn run_pipeline(
         }
     }
     let prev_block = resolved.start_block.saturating_sub(1);
-    let registry_path = chain_config.pools_registry_path.as_deref();
 
     if !params.strategies.is_empty() {
         BacktestRunner::init_pools(
             &mut pool_manager,
-            registry_path,
             &rpc,
             prev_block,
             Some(&cache),

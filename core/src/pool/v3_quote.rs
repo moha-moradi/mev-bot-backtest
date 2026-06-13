@@ -1,3 +1,5 @@
+//! Uniswap V3 exact-input quoting using the geometric tick-to-sqrt-price formula.
+
 use std::collections::HashMap;
 
 use alloy::primitives::{U256, U512};

@@ -1,3 +1,5 @@
+//! Backtest orchestration — replays blocks through revm and runs all MEV detection strategies.
+
 use std::cell::RefCell;
 
 use crate::cache::CacheStore;
@@ -8,7 +10,6 @@ use crate::mev::jit_arb::JitArbDetector;
 use crate::mev::multi_hop::MultiHopArbDetector;
 use crate::mev::two_hop::TwoHopArbDetector;
 use alloy::primitives::Address;
-use crate::pool::registry::PoolRegistry;
 use crate::pool::state::{PoolInfo, PoolManager, PoolState, UniswapV2PoolState};
 use crate::replay::BlockReplayer;
 use crate::resolver::ResolvedRange;
@@ -53,50 +54,29 @@ impl BacktestRunner {
     /// Initialize the pool manager by loading pool definitions and fetching
     /// on-chain reserve state at a reference block.
     ///
-    /// Loading order:
-    /// 1. Static pool registry JSON (e.g., `pools/polygon.json`) — these pools
-    ///    take precedence over discovered pools.
-    /// 2. Previously discovered pools from the sled cache (on-chain discovery
-    ///    from prior runs).
-    /// 3. Merge: registry pools win on address collision.
-    ///
-    /// After loading definitions, `init_from_rpc()` is called to fetch the
-    /// current reserves for each pool via `eth_call getReserves()` (V2) or
-    /// `slot0()/liquidity()` (V3). This runs with up to 20 concurrent RPC
-    /// calls.
+    /// Loads pool definitions from the sled cache (on-chain discovery from
+    /// prior runs or auto-discovery at backtest start). Then fetches current
+    /// reserves for each pool via `eth_call getReserves()` (V2) or
+    /// `slot0()/liquidity()` (V3) with up to 20 concurrent RPC calls.
     ///
     /// Pools that fail to initialize (e.g., the contract no longer exists at
     /// that block) are logged as warnings but do not halt execution.
     pub async fn init_pools(
         pool_manager: &mut PoolManager,
-        registry_path: Option<&str>,
         rpc: &RpcClient,
         block_num: u64,
         cache: Option<&CacheStore>,
     ) {
-        // 1. Load pools from JSON registry
-        let registry_pools = PoolRegistry::load_optional(registry_path);
-        tracing::info!("Loaded {} pools from registry", registry_pools.len());
-
-        // 2. Load discovered pools from sled cache (if available)
-        let mut discovered_pools = Vec::new();
+        // Load discovered pools from sled cache (if available)
         if let Some(cache) = cache {
             match cache.list_discovered_pools() {
-                Ok(pools) => discovered_pools = pools,
+                Ok(pools) => {
+                    for info in &pools {
+                        add_pool_to_manager(pool_manager, info.clone());
+                    }
+                    tracing::info!("Loaded {} pools from discovery cache", pools.len());
+                }
                 Err(e) => tracing::warn!("Failed to list discovered pools: {}", e),
-            }
-        }
-        tracing::info!("Loaded {} discovered pools from cache", discovered_pools.len());
-
-        // 3. Merge: registry pools take precedence over discovered pools
-        let mut seen = std::collections::HashSet::new();
-        for info in &registry_pools {
-            seen.insert(info.address);
-            add_pool_to_manager(pool_manager, info.clone());
-        }
-        for info in &discovered_pools {
-            if seen.insert(info.address) {
-                add_pool_to_manager(pool_manager, info.clone());
             }
         }
 

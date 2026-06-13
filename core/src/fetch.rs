@@ -1,3 +1,5 @@
+//! Block data fetching with caching — downloads blocks from the RPC endpoint and stores them.
+
 use std::sync::Arc;
 use std::time::Instant;
 

@@ -1,3 +1,5 @@
+//! Configuration validation — parses and normalizes runtime parameters, returning a `ValidationResult`.
+
 use crate::config::{ChainConfig, Config};
 use crate::types::{
     ChainName, FlashLoanProvider, GasModel, OutputFormat, RangeMode, Strategy,

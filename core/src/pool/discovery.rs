@@ -1,3 +1,5 @@
+//! Pool discovery — scans chain event logs to find and register new DEX pools.
+
 use std::sync::LazyLock;
 
 use alloy::primitives::{keccak256, Address, B256};

@@ -1,3 +1,5 @@
+//! Two-hop arbitrage detection — finds cyclic arbitrage across two connected pools (V2↔V2, V2↔V3, V3↔V3).
+
 use std::cmp;
 
 use alloy::primitives::{Address, U256};

@@ -1,3 +1,5 @@
+//! JIT (just-in-time) liquidity detection — identifies liquidity added before a swap and removed after.
+
 use std::collections::HashMap;
 use alloy::primitives::{Address, U256};
 use crate::data::ExecutedLog;

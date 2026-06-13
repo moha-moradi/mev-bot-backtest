@@ -1,3 +1,5 @@
+//! Sandwich attack detection — identifies buy-sell pairs that sandwich a victim transaction.
+
 use std::collections::HashMap;
 use alloy::primitives::{b256, Address, B256, U256};
 use crate::data::ExecutedLog;

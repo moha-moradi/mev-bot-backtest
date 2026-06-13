@@ -1,3 +1,5 @@
+//! Small utility functions shared across the crate.
+
 /// Decode a uint128 from the last 16 bytes of a byte slice.
 /// If the slice is shorter than 16 bytes, leading bytes are treated as zero.
 pub fn u128_from_be_bytes(bytes: &[u8]) -> u128 {

@@ -1,5 +1,4 @@
-// Uniswap V2 constant-product AMM math.
-// All reverse calculations use integer arithmetic with fee denominator 10000.
+//! Uniswap V2/V3 AMM math: constant-product formulas, optimal arbitrage amounts, and multi-hop routing.
 
 /// Compute output amount for a given input amount under constant product.
 ///

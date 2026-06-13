@@ -1,3 +1,5 @@
+//! Multi-hop arbitrage detection — finds profitable swap paths across connected pools (BFS, depth ≤ 4).
+
 use alloy::primitives::{Address, U256};
 use crate::mev::opportunity::MevOpportunity;
 use crate::pool::math::{constant_product_output_amount, optimal_n_hop_generic};

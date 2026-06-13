@@ -1,3 +1,5 @@
+//! Core type definitions: chain names, strategies, gas config, output formats, and flash loan providers.
+
 use std::fmt;
 use std::str::FromStr;
 

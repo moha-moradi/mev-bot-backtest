@@ -181,7 +181,6 @@ fn build_jitarb_trace(opp: &MevOpportunity, gross: f64, gas: f64, net: f64) -> S
 /// - `result` is `"profitable"` only when `net > MIN_PROFIT_THRESHOLD` (0.001 ETH)
 pub fn map_opportunity(
     opp: &MevOpportunity,
-    _pool_registry: &mev_scout_core::pool::registry::PoolRegistry,
     is_flash_loan: bool,
     block_hash: &str,
     usd_price: f64,
@@ -245,18 +244,17 @@ pub fn map_opportunity(
 
 /// Batch-map a slice of `MevOpportunity` values to `UiOpportunity` values.
 ///
-/// Uses the global `PoolRegistry` for token/pool metadata. Flash-loan eligibility
+/// Flash-loan eligibility
 /// is inferred from the strategy (`JitArb` and `MultiHopArb` always use flash loans).
 pub fn map_opportunities(
     opportunities: &[MevOpportunity],
     usd_price: f64,
 ) -> Vec<UiOpportunity> {
-    let registry = mev_scout_core::pool::registry::PoolRegistry;
     opportunities
         .iter()
         .map(|opp| {
             let is_fl = matches!(opp.strategy, Strategy::JitArb | Strategy::MultiHopArb);
-            map_opportunity(opp, &registry, is_fl, &format!("{:x}", opp.block_number), usd_price)
+            map_opportunity(opp, is_fl, &format!("{:x}", opp.block_number), usd_price)
         })
         .collect()
 }
